@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nano-ontoprompt 本地开发环境</title>
+<style>
+  :root {
+    --bg: #fafaf7; --fg: #1f2328; --muted: #656d76; --line: #e3e3dc;
+    --card: #ffffff; --accent: #0b6e4f; --code-bg: #f1f1ec; --warn: #9a6700; --warn-bg: #fff8e6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181c; --fg: #e6e6e3; --muted: #9aa0a6; --line: #2c3036;
+      --card: #1d2025; --accent: #4cc38a; --code-bg: #24282e; --warn: #e3b341; --warn-bg: #2b2412; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding-inline: 16px; }
+  main { max-width: 860px; margin: 0 auto; padding-block: 48px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 44px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 22px 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  .arch { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .box h3 { margin-top: 0; }
+  .box ul { margin: 0; padding-left: 18px; }
+  .tag { font-size: 12px; color: var(--accent); font-weight: 600; letter-spacing: .03em; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .note { background: var(--warn-bg); border-left: 3px solid var(--warn); padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+  .note b { color: var(--warn); }
+  ol li { margin-bottom: 6px; }
+  @media (max-width: 640px) { .arch { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>nano-ontoprompt 本地开发环境</h1>
+  <p class="sub">在原始源码基础上，为 Windows 二开搭建的“混合模式”开发环境说明</p>
+
+  <h2>1. 整体思路</h2>
+  <p>原项目的 <code>docker-compose.v2.yml</code> 会把前后端也放进容器。二开时这样不方便：断点调试要额外配置远程调试，Windows 挂载目录的热更新不稳定，新增依赖要重新 build 镜像。所以这里改成：</p>
+  <div class="arch">
+    <div class="box">
+      <div class="tag">DOCKER · docker-compose.dev.yml</div>
+      <h3>基础设施</h3>
+      <ul>
+        <li>PostgreSQL 16 — <code>localhost:5432</code></li>
+        <li>Redis 7 — <code>localhost:6379</code></li>
+        <li>Neo4j 5.20 — <code>7474</code>（浏览器）/ <code>7687</code>（bolt）</li>
+        <li>MinIO — <code>9000</code>（API）/ <code>9001</code>（控制台）</li>
+        <li>ChromaDB — <code>localhost:8001</code></li>
+      </ul>
+    </div>
+    <div class="box">
+      <div class="tag">宿主机 · VS Code</div>
+      <h3>应用本身</h3>
+      <ul>
+        <li>后端 FastAPI — <code>localhost:8000</code>（<code>backend/.venv</code>）</li>
+        <li>前端 Vite — <code>localhost:5173</code>，<code>/api</code> 代理到 8000</li>
+        <li>Celery worker — 按需启动</li>
+        <li>断点调试、热更新、IDE 补全都直接可用</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>2. 做了哪些改动</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>文件</th><th>是否入库</th><th>作用</th></tr>
+    <tr><td><code>docker-compose.dev.yml</code></td><td>是</td><td>新增。只包含 5 个基础服务，项目名 <code>ontoprompt-dev</code>，数据卷和原 compose 相互独立。</td></tr>
+    <tr><td><code>backend/.env.dev.example</code></td><td>是</td><td>新增。本地开发配置模板，所有服务地址都改成 <code>localhost</code>。</td></tr>
+    <tr><td><code>backend/.env</code></td><td>否</td><td>由上面的模板复制而来，后端实际读取的配置。可以在这里填 API Key。</td></tr>
+    <tr><td><code>.vscode/launch.json</code></td><td>是</td><td>调试配置：后端、Celery、前端，以及一键启动全栈的组合配置。</td></tr>
+    <tr><td><code>.vscode/tasks.json</code></td><td>是</td><td>任务 <code>infra: up / down / logs</code>，用来管理 Docker 服务。</td></tr>
+    <tr><td><code>.vscode/settings.json</code></td><td>是</td><td>把 Python 解释器指向 <code>backend/.venv</code>。</td></tr>
+    <tr><td><code>.gitignore</code></td><td>是</td><td>原规则忽略整个 <code>.vscode/</code>，改为只放行上面三个共享配置；另外补充了 <code>backend/uploads/</code> 和 env 模板的例外规则。</td></tr>
+    <tr><td><code>backend/.venv</code>、<code>frontend/node_modules</code></td><td>否</td><td>依赖目录，已被忽略。</td></tr>
+  </table>
+  </div>
+  <p>业务源码一行都没有改。</p>
+
+  <h2>3. 配置过程中遇到的坑</h2>
+  <div class="note"><b>坑 1：Docker Hub 上的 <code>minio/minio</code> 已拉取不到。</b> 报错 <code>pull access denied</code>，还会连带中断其他镜像的拉取。解决：改用官方镜像地址 <code>quay.io/minio/minio:latest</code>。原来的 <code>docker-compose.v2.yml</code> 也有同样的问题，全量部署前需要一起改。</div>
+  <div class="note"><b>坑 2：<code>.env</code> 里写中文，Windows 上后端直接启动不了。</b> slowapi（通过 starlette Config）会用系统默认编码 GBK 读取 <code>.env</code>，遇到 UTF-8 中文就报 <code>UnicodeDecodeError</code>。解决：env 文件保持纯 ASCII，调试配置里再加上 <code>PYTHONUTF8=1</code> 作为双保险。在命令行手动启动时，最好也设置这个环境变量。</div>
+  <div class="note"><b>坑 3：原 <code>.env.example</code> 里的 <code>CHROMA_PORT=8001</code>。</b> 在 Docker 网络内部，ChromaDB 实际监听 8000，8001 只是映射到宿主机的端口。用原 compose 全量部署时后端会连不上 ChromaDB；本地混合模式走 <code>localhost:8001</code>，正好没有这个问题。</div>
+  <div class="note"><b>已知但不影响运行：</b> 启动时 Neo4j 会报一条索引创建失败的警告。原因是源码 <code>backend/app/services/v2/graph/index_setup.py</code> 里有一条 <code>FOR (n)</code> 索引语句没写节点标签，Neo4j 5 不支持这种写法。这是上游代码本身的问题，和环境配置无关。</div>
+
+  <h2>4. 日常使用</h2>
+  <h3>方式 A：VS Code 一键启动（推荐）</h3>
+  <ol>
+    <li>打开 Docker Desktop，等它启动完成。</li>
+    <li>VS Code 左侧进入“运行和调试”，选 <b>Full stack (Backend + Frontend)</b>，按 F5。它会先执行 <code>infra: up</code>，再同时启动后端和前端。</li>
+    <li>打开 <code>http://localhost:5173</code>，用 <code>admin / admin123</code> 登录。</li>
+  </ol>
+  <h3>方式 B：命令行</h3>
+<pre><code># 1. 基础服务
+docker compose -f docker-compose.dev.yml up -d
+
+# 2. 后端（PowerShell）
+cd backend
+$env:PYTHONUTF8="1"
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+
+# 3. 前端（另开一个终端）
+cd frontend
+npm run dev
+
+# 可选：Celery worker（Windows 上必须加 --pool=solo）
+cd backend
+.venv\Scripts\python -m celery -A app.tasks.extraction worker --loglevel=info --pool=solo</code></pre>
+
+  <h3>常用命令</h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>目的</th><th>命令</th></tr>
+    <tr><td>停止基础服务（保留数据）</td><td><code>docker compose -f docker-compose.dev.yml down</code></td></tr>
+    <tr><td>清空所有数据重来</td><td><code>docker compose -f docker-compose.dev.yml down -v</code></td></tr>
+    <tr><td>查看服务日志</td><td><code>docker compose -f docker-compose.dev.yml logs -f</code></td></tr>
+    <tr><td>API 文档</td><td><code>http://localhost:8000/docs</code></td></tr>
+    <tr><td>Neo4j 浏览器</td><td><code>http://localhost:7474</code>（neo4j / ontoprompt123）</td></tr>
+    <tr><td>MinIO 控制台</td><td><code>http://localhost:9001</code>（minioadmin / minioadmin）</td></tr>
+    <tr><td>新增 Python 依赖</td><td><code>backend\.venv\Scripts\pip install xxx</code>，然后写入 <code>requirements.txt</code></td></tr>
+    <tr><td>数据库迁移</td><td>在 <code>backend</code> 目录执行 <code>.venv\Scripts\alembic upgrade head</code>（后端启动时也会自动执行）</td></tr>
+  </table>
+  </div>
+
+  <h3>不想开 Docker 时</h3>
+  <p>把 <code>backend/.env</code> 里的 <code>DATABASE_URL</code> 改成 <code>sqlite:///./ontoprompt.db</code> 即可。Neo4j、MinIO、ChromaDB、Redis 连不上时，项目会自动退回到 SQLite 图存储、本地文件存储和同步执行。</p>
+
+  <h2>5. 验证记录</h2>
+  <ul>
+    <li>Docker 29.8.0 / Compose v5.5.1，5 个容器全部正常启动</li>
+    <li>Python 3.11.9 虚拟环境装好 <code>requirements.txt</code>；Node 24 下 <code>npm install</code> 成功</li>
+    <li>后端启动后 alembic 在 PostgreSQL 建出 29 张表，并创建了 admin 账号</li>
+    <li><code>POST /api/v1/auth/login</code> 返回 token；Vite 首页和 <code>/api</code> 代理都返回 200</li>
+  </ul>
+</main>
+</body>
+</html>

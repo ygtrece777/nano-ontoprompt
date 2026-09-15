@@ -1,0 +1,58 @@
+# 本地二开用：只启动基础设施，backend / frontend 在宿主机直接运行（便于断点调试和热更新）
+# 用法: docker compose -f docker-compose.dev.yml up -d
+name: ontoprompt-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ontoprompt
+      POSTGRES_USER: ontoprompt
+      POSTGRES_PASSWORD: ontoprompt
+    ports: ["5432:5432"]
+    volumes: [pg_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ontoprompt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.20-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/ontoprompt123
+    volumes: [neo4j_data:/data]
+
+  minio:
+    image: quay.io/minio/minio:latest  # Docker Hub 上的 minio/minio 已拉取不到
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes: [minio_data:/data]
+    command: server /data --console-address ":9001"
+
+  chromadb:
+    image: chromadb/chroma:0.5.20
+    ports: ["8001:8000"]
+    volumes: [chroma_data:/chroma/chroma]
+
+volumes:
+  pg_data:
+  neo4j_data:
+  minio_data:
+  chroma_data:

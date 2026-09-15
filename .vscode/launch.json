@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "jinja": true,
+      "justMyCode": true,
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "Backend: Celery worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": [
+        "-A",
+        "app.tasks.extraction",
+        "worker",
+        "--loglevel=info",
+        "--pool=solo"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "Frontend: Vite dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack (Backend + Frontend)",
+      "configurations": [
+        "Backend: FastAPI (uvicorn)",
+        "Frontend: Vite dev"
+      ],
+      "preLaunchTask": "infra: up",
+      "stopAll": true
+    }
+  ]
+}

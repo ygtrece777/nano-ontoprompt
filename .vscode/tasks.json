@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "infra: up",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.dev.yml up -d",
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: down",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.dev.yml down",
+      "problemMatcher": []
+    },
+    {
+      "label": "infra: logs",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.dev.yml logs -f --tail=100",
+      "problemMatcher": []
+    }
+  ]
+}

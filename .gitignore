@@ -15,8 +15,13 @@ build/
 *.db-shm
 *.db-wal
 
+# Environment (local dev) — 模板 backend/.env.dev.example 入库
+!.env.example
+!.env.dev.example
+
 # Uploads
 uploads/
+backend/uploads/
 !uploads/.gitkeep
 
 # Node
@@ -26,7 +31,11 @@ frontend/.env.local
 
 # IDE
 .idea/
-.vscode/
+# 共享的 VS Code 调试/任务配置入库，个人设置不入库
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
 *.swp
 *.swo
 
