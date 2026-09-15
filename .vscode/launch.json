@@ -56,7 +56,7 @@
         "Backend: FastAPI (uvicorn)",
         "Frontend: Vite dev"
       ],
-      "preLaunchTask": "infra: up",
+      "preLaunchTask": "dev: setup",
       "stopAll": true
     }
   ]

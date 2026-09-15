@@ -2,9 +2,16 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "dev: setup",
+      "detail": "Check prerequisites, create .env/venv, install deps, start containers (idempotent)",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-setup.ps1",
+      "problemMatcher": []
+    },
+    {
       "label": "infra: up",
       "type": "shell",
-      "command": "docker compose -f docker-compose.dev.yml up -d",
+      "command": "docker compose -f docker-compose.dev.yml up -d --wait",
       "problemMatcher": []
     },
     {

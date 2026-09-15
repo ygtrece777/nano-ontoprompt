@@ -77,9 +77,10 @@
     <tr><th>文件</th><th>是否入库</th><th>作用</th></tr>
     <tr><td><code>docker-compose.dev.yml</code></td><td>是</td><td>新增。只包含 5 个基础服务，项目名 <code>ontoprompt-dev</code>，数据卷和原 compose 相互独立。</td></tr>
     <tr><td><code>backend/.env.dev.example</code></td><td>是</td><td>新增。本地开发配置模板，所有服务地址都改成 <code>localhost</code>。</td></tr>
-    <tr><td><code>backend/.env</code></td><td>否</td><td>由上面的模板复制而来，后端实际读取的配置。可以在这里填 API Key。</td></tr>
+    <tr><td><code>backend/.env</code></td><td>否</td><td>由上面的模板复制而来，后端实际读取的配置，放只属于本机的值（比如改过的密码）。大模型的 API Key 不在这里填，要在网页的 Models 页面添加。</td></tr>
     <tr><td><code>.vscode/launch.json</code></td><td>是</td><td>调试配置：后端、Celery、前端，以及一键启动全栈的组合配置。</td></tr>
-    <tr><td><code>.vscode/tasks.json</code></td><td>是</td><td>任务 <code>infra: up / down / logs</code>，用来管理 Docker 服务。</td></tr>
+    <tr><td><code>scripts/dev-setup.ps1</code></td><td>是</td><td>一键准备环境的脚本，按 F5 时自动运行，详见第 4 节。</td></tr>
+    <tr><td><code>.vscode/tasks.json</code></td><td>是</td><td>任务 <code>dev: setup</code>（运行上面的脚本），以及管理 Docker 服务的 <code>infra: up / down / logs</code>。</td></tr>
     <tr><td><code>.vscode/settings.json</code></td><td>是</td><td>把 Python 解释器指向 <code>backend/.venv</code>。</td></tr>
     <tr><td><code>.gitignore</code></td><td>是</td><td>原规则忽略整个 <code>.vscode/</code>，改为只放行上面三个共享配置；另外补充了 <code>backend/uploads/</code> 和 env 模板的例外规则。</td></tr>
     <tr><td><code>backend/.venv</code>、<code>frontend/node_modules</code></td><td>否</td><td>依赖目录，已被忽略。</td></tr>
@@ -94,12 +95,23 @@
   <div class="note"><b>已知但不影响运行：</b> 启动时 Neo4j 会报一条索引创建失败的警告。原因是源码 <code>backend/app/services/v2/graph/index_setup.py</code> 里有一条 <code>FOR (n)</code> 索引语句没写节点标签，Neo4j 5 不支持这种写法。这是上游代码本身的问题，和环境配置无关。</div>
 
   <h2>4. 日常使用</h2>
-  <h3>方式 A：VS Code 一键启动（推荐）</h3>
+  <h3>方式 A：VS Code 一键启动（推荐，新电脑也一样）</h3>
+  <p>只需要自己装好 Docker Desktop、Python 3.11+、Node 18+，然后：</p>
   <ol>
     <li>打开 Docker Desktop，等它启动完成。</li>
-    <li>VS Code 左侧进入“运行和调试”，选 <b>Full stack (Backend + Frontend)</b>，按 F5。它会先执行 <code>infra: up</code>，再同时启动后端和前端。</li>
+    <li>VS Code 左侧进入“运行和调试”，选 <b>Full stack (Backend + Frontend)</b>，按 F5。</li>
     <li>打开 <code>http://localhost:5173</code>，用 <code>admin / admin123</code> 登录。</li>
   </ol>
+  <p>按 F5 时会先运行 <code>scripts/dev-setup.ps1</code>，它依次做这些事，已经做过的步骤会自动跳过：</p>
+  <ol>
+    <li>检查 Docker、Node、Python 是否安装，Docker Desktop 是否在运行，缺什么就提示安装命令。</li>
+    <li>如果没有 <code>backend/.env</code>，从模板复制一份。已有的不会被覆盖。</li>
+    <li>创建 <code>backend/.venv</code> 并安装后端依赖。只在 <code>requirements.txt</code> 变化时重装。</li>
+    <li>安装前端依赖（<code>npm ci</code>）。只在 <code>package-lock.json</code> 变化时重装。</li>
+    <li>启动 Docker 服务，并等所有服务就绪后再启动后端，避免后端连不上数据库。</li>
+  </ol>
+  <p>新电脑第一次按 F5 要装依赖，需要几分钟；之后每次只要一两秒。同事 <code>git pull</code> 到新依赖后，下次按 F5 也会自动补装。</p>
+  <div class="note"><b>注意：</b> 需要重装前端依赖时，如果前端开发服务器还在运行，脚本会拒绝执行并提示先停止（Shift+F5）。原因是运行中的 Vite 会锁住依赖里的文件，这时强行重装会把 <code>node_modules</code> 删到一半。</div>
   <h3>方式 B：命令行</h3>
 <pre><code># 1. 基础服务
 docker compose -f docker-compose.dev.yml up -d
