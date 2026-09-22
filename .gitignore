@@ -31,8 +31,10 @@ frontend/dist/
 # Local test and browser automation scripts may contain demo credentials.
 # Keep them out of public repositories; use local copies for development.
 backend/tests/
+backend/scripts/
 frontend/scripts/
 frontend/src/test/
+test_data/
 test_data/*.py
 test_data/*.mjs
 test_data/*.ts
