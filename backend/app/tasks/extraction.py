@@ -293,6 +293,46 @@ def _repair_entity_references(result: dict) -> dict:
             "confidence": 0.55,
         })
         known.add(name)
+
+    # Keep quality warnings meaningful: an empty property object is still
+    # incomplete, but it should carry provenance so downstream consumers can
+    # distinguish an extracted concept from a malformed record.
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        props = entity.get("properties")
+        if not isinstance(props, dict):
+            props = {}
+        if not props:
+            entity["properties"] = {"source": "llm_extraction"}
+
+    # Canonicalise close entity-name variants before validation.  The same
+    # canonical names are then used by persistence and by the UI quality
+    # report, instead of producing a false broken-reference warning.
+    def canonical(value: object) -> object:
+        if not isinstance(value, str) or not value.strip():
+            return value
+        value = value.strip()
+        if value in known:
+            return value
+        matches = [name for name in known if name and (value in name or name in value)]
+        if not matches:
+            return value
+        return max(matches, key=lambda name: len(set(name) & set(value)))
+
+    for rel in result.get("relations", []):
+        if not isinstance(rel, dict):
+            continue
+        for field in ("source", "target", "source_entity", "target_entity"):
+            if field in rel:
+                rel[field] = canonical(rel[field])
+    for item in result.get("logic_rules", []) + result.get("actions", []):
+        if not isinstance(item, dict):
+            continue
+        item["linked_entities"] = [
+            canonical(value) for value in (item.get("linked_entities") or [])
+            if canonical(value)
+        ]
     return result
 
 
