@@ -12,11 +12,52 @@ import ActionsTab from './tabs/ActionsTab'
 import AuditTab from './tabs/AuditTab'
 import CuratedDatasetsTab from './tabs/CuratedDatasetsTab'
 import AnalyticsTab from './tabs/AnalyticsTab'
+import OperationsTab from './tabs/OperationsTab'
+import { Activity, ArrowRight, Boxes, GitBranch, ListChecks, Network, Sparkles } from 'lucide-react'
 
 
 const GraphTab = lazy(() => import('./tabs/GraphTabV2'))
 
-type Tab = 'info' | 'analytics' | 'graph' | 'entities' | 'logic' | 'actions' | 'files' | 'extract' |  'audit' | 'curated'
+type Tab = 'info' | 'analytics' | 'operations' | 'graph' | 'entities' | 'logic' | 'actions' | 'files' | 'extract' |  'audit' | 'curated'
+
+function OntologyCommandCenter({ ontologyId, ontology, onOpen }: { ontologyId: string; ontology: any; onOpen: (tab: Tab) => void }) {
+  const entities = useQuery({ queryKey: ['entities', ontologyId], queryFn: () => ontologyApi.listEntities(ontologyId) as any })
+  const logic = useQuery({ queryKey: ['logic', ontologyId], queryFn: () => ontologyApi.listLogic(ontologyId) as any })
+  const actions = useQuery({ queryKey: ['actions', ontologyId], queryFn: () => ontologyApi.listActions(ontologyId) as any })
+  const graph = useQuery({ queryKey: ['graph', ontologyId], queryFn: () => ontologyApi.getGraph(ontologyId) as any })
+  const cards = [
+    { label: '实体', value: entities.data?.length ?? 0, icon: Boxes, tab: 'entities' as Tab, iconClass: 'text-blue-300' },
+    { label: '关系', value: graph.data?.edges?.length ?? 0, icon: Network, tab: 'graph' as Tab, iconClass: 'text-emerald-300' },
+    { label: '逻辑规则', value: logic.data?.length ?? 0, icon: GitBranch, tab: 'logic' as Tab, iconClass: 'text-violet-300' },
+    { label: '业务动作', value: actions.data?.length ?? 0, icon: ListChecks, tab: 'actions' as Tab, iconClass: 'text-amber-300' },
+  ]
+  const total = cards.reduce((sum, card) => sum + card.value, 0)
+  return (
+    <section className="mb-6 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-sm">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-indigo-200"><Sparkles size={14} /> Ontology command center</div>
+          <h3 className="text-lg font-semibold">{ontology.name} 的知识资产总览</h3>
+          <p className="mt-1 max-w-2xl text-sm text-slate-300">从实体、关系到规则和动作，快速查看这个本体当前已经沉淀的可用知识。</p>
+        </div>
+        <button onClick={() => onOpen('analytics')} className="inline-flex items-center gap-1.5 self-start rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"><Activity size={15} /> 查看分析 <ArrowRight size={14} /></button>
+      </div>
+      <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cards.map(({ label, value, icon: Icon, tab, iconClass }) => (
+          <button key={label} onClick={() => onOpen(tab)} className="group rounded-xl border border-white/10 bg-white/[0.08] p-4 text-left transition hover:bg-white/[0.15]">
+            <div className="flex items-center justify-between text-slate-300"><span className="text-sm">{label}</span><Icon size={18} className={iconClass} /></div>
+            <div className="mt-2 text-3xl font-semibold">{value}</div>
+            <div className="mt-1 text-xs text-slate-400">点击进入明细 <ArrowRight size={12} className="inline transition group-hover:translate-x-1" /></div>
+          </button>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/10 pt-3 text-xs text-slate-300">
+        <span>版本 {ontology.version}</span><span>领域 {ontology.domain}</span><span>共 {total} 项结构化资产</span>
+        {graph.data && <span className="text-emerald-300">图谱已加载</span>}
+      </div>
+    </section>
+  )
+}
 
 class GraphErrorBoundary extends React.Component<
   { children: React.ReactNode; fallbackLabel?: string },
@@ -69,6 +110,7 @@ export default function OntologyDetailPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: 'info', label: t('ontology.tabs.info') },
     { key: 'analytics', label: '数据分析' },
+    { key: 'operations', label: '运行中心' },
     { key: 'graph', label: t('ontology.tabs.graph') },
     { key: 'entities', label: t('ontology.tabs.entities') },
     { key: 'logic', label: t('ontology.tabs.logic') },
@@ -104,9 +146,12 @@ export default function OntologyDetailPage() {
         </div>
       </div>
 
+      <OntologyCommandCenter ontologyId={id!} ontology={ontology} onOpen={setActiveTab} />
+
       <div>
         {activeTab === 'info' && <InfoTab ontology={ontology} />}
         {activeTab === 'analytics' && <AnalyticsTab ontologyId={id!} />}
+        {activeTab === 'operations' && <OperationsTab ontologyId={id!} />}
         {activeTab === 'files' && <FilesTab ontologyId={id!} />}
         {activeTab === 'curated' && <CuratedDatasetsTab ontologyId={id!} />}
         {activeTab === 'graph' && (

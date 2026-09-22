@@ -12,19 +12,40 @@ def _safe_count(db, model):
     except Exception:
         return 0
 
+
+def _combined_count(db, legacy_model, v2_model, ontology_id=None):
+    """Count legacy + V2 records, preferring V2 when the same named item exists."""
+    try:
+        legacy_query = db.query(legacy_model)
+        v2_query = db.query(v2_model)
+        if ontology_id is not None:
+            legacy_query = legacy_query.filter(legacy_model.ontology_id == ontology_id)
+            v2_query = v2_query.filter(v2_model.ontology_id == ontology_id)
+        legacy_rows = legacy_query.all()
+        v2_rows = v2_query.all()
+        # V1 uses name_cn, while V2 uses name.  A mirrored record is one logical item.
+        v2_names = {getattr(row, "name", None) for row in v2_rows}
+        unique_legacy = [row for row in legacy_rows if getattr(row, "name_cn", None) not in v2_names]
+        return len(v2_rows) + len(unique_legacy)
+    except Exception:
+        # Keep the overview available during migrations where one of the tables may not exist.
+        return _safe_count(db, legacy_model)
+
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db), _=Depends(get_current_user)):
     from app.models.entity import Entity
     from app.models.logic import LogicRule
     from app.models.action import Action
+    from app.models.v2.logic import OntologyLogicRule
+    from app.models.v2.action import OntologyActionType
 
     # Recent ontologies
     recent = db.query(OntologyProject).order_by(OntologyProject.updated_at.desc()).limit(6).all()
     recent_list = []
     for o in recent:
         entity_count = db.query(Entity).filter(Entity.ontology_id == o.id).count()
-        logic_count = db.query(LogicRule).filter(LogicRule.ontology_id == o.id).count()
-        action_count = db.query(Action).filter(Action.ontology_id == o.id).count()
+        logic_count = _combined_count(db, LogicRule, OntologyLogicRule, o.id)
+        action_count = _combined_count(db, Action, OntologyActionType, o.id)
         recent_list.append({
             "id": o.id,
             "name": o.name,
@@ -56,8 +77,8 @@ def get_stats(db: Session = Depends(get_db), _=Depends(get_current_user)):
         "data": {
             "ontology_count": _safe_count(db, OntologyProject),
             "entity_count": _safe_count(db, Entity),
-            "logic_count": _safe_count(db, LogicRule),
-            "action_count": _safe_count(db, Action),
+            "logic_count": _combined_count(db, LogicRule, OntologyLogicRule),
+            "action_count": _combined_count(db, Action, OntologyActionType),
             "recent_ontologies": recent_list,
             "domain_counts": domain_counts,
             "status_counts": status_counts,

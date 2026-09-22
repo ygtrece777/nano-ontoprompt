@@ -2,10 +2,17 @@
 from __future__ import annotations
 import json
 import logging
+import os
 import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Chroma 0.5.x may attempt to initialize the PostHog client even when
+# telemetry is not needed. Disable it before importing Chroma so a telemetry
+# compatibility error cannot pollute application logs or affect startup.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("CHROMA_TELEMETRY", "False")
 
 try:
     import chromadb

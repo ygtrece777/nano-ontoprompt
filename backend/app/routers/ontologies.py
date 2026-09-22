@@ -12,6 +12,15 @@ import uuid
 
 router = APIRouter()
 
+
+def _combined_count(db, legacy_model, v2_model, ontology_id: str) -> int:
+    """Count both generations without double-counting mirrored records."""
+    legacy_rows = db.query(legacy_model).filter(legacy_model.ontology_id == ontology_id).all()
+    v2_rows = db.query(v2_model).filter(v2_model.ontology_id == ontology_id).all()
+    v2_names = {getattr(row, "name", None) for row in v2_rows}
+    unique_legacy = [row for row in legacy_rows if getattr(row, "name_cn", None) not in v2_names]
+    return len(v2_rows) + len(unique_legacy)
+
 @router.get("")
 def list_ontologies(
     name: Optional[str] = None,
@@ -24,10 +33,16 @@ def list_ontologies(
     total = q.count()
     items = q.order_by(OntologyProject.updated_at.desc()).offset((page-1)*page_size).limit(page_size).all()
     result = []
+    from app.models.logic import LogicRule
+    from app.models.action import Action
+    from app.models.v2.logic import OntologyLogicRule
+    from app.models.v2.action import OntologyActionType
     for item in items:
         d = OntologyListItem.model_validate(item).model_dump()
         d['entity_count'] = db.query(func.count(Entity.id)).filter(Entity.ontology_id == item.id).scalar() or 0
         d['relation_count'] = db.query(func.count(Relation.id)).filter(Relation.ontology_id == item.id).scalar() or 0
+        d['logic_count'] = _combined_count(db, LogicRule, OntologyLogicRule, item.id)
+        d['action_count'] = _combined_count(db, Action, OntologyActionType, item.id)
         result.append(d)
     return {"data": {"items": result, "total": total, "page": page, "page_size": page_size}}
 

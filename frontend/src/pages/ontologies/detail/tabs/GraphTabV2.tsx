@@ -81,7 +81,9 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
 
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [hideIsolated, setHideIsolated] = useState(false)
+  // Pipeline Mapping 会把业务行作为实例节点保存，但关系目前建立在概念层。
+  // 默认隐藏孤立实例，优先让用户看到真正的本体结构；仍可通过按钮展开全部实例。
+  const [hideIsolated, setHideIsolated] = useState(true)
   const [queryMode, setQueryMode] = useState<QueryMode>('natural')
   const [query, setQuery] = useState('')
   const [queryLoading, setQueryLoading] = useState(false)
@@ -322,7 +324,13 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
     setQueryResult([])
     try {
       if (queryMode === 'natural') {
-        const res: any = await apiClientV2.post(`/ontologies/${ontologyId}/graph/ask`, { question: query })
+        const schema = graphData ? {
+          labels: Array.from(new Set(graphData.nodes.flatMap(n => n.labels))),
+          relationship_types: Array.from(new Set(graphData.edges.map(e => e.type))),
+          node_properties: Array.from(new Set(graphData.nodes.flatMap(n => Object.keys(n.properties || {})))).slice(0, 80),
+          relationship_properties: Array.from(new Set(graphData.edges.flatMap(e => Object.keys((e as any).properties || {})))).slice(0, 40),
+        } : {}
+        const res: any = await apiClientV2.post(`/ontologies/${ontologyId}/graph/ask`, { question: query, schema })
         setQueryResult(res.results || [])
       } else {
         const res: any = await apiClientV2.post(`/ontologies/${ontologyId}/graph/cypher`, { query })
@@ -402,6 +410,11 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
           </button>
         )}
       </div>
+      {isolatedCount > 0 && (
+        <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+          当前关系主要建立在概念层；{isolatedCount} 个实例节点没有直接关系，默认隐藏以突出本体结构。点击上方按钮可查看全部实例。
+        </div>
+      )}
 
       {/* 图例 */}
       {labelColorMap.size > 0 && (
