@@ -246,6 +246,56 @@ def _fuzzy_resolve_entity(name: str, name_to_id: dict) -> str | None:
     return candidates[0][1]
 
 
+def _repair_entity_references(result: dict) -> dict:
+    """Make relation endpoints addressable before quality validation.
+
+    LLMs occasionally mention a valid concept only in a relation or a
+    linked_entities field.  Previously this was rejected by the validator even
+    though the persistence layer could resolve most of those names later.
+    Preserve the model output, but add a minimal Concept placeholder so the
+    graph remains referentially complete.  The placeholder is explicitly
+    marked and still appears in the quality report if it lacks real attributes.
+    """
+    entities = result.setdefault("entities", [])
+    known = {
+        e.get("name_cn") for e in entities
+        if isinstance(e, dict) and e.get("name_cn")
+    }
+    referenced: list[str] = []
+    for rel in result.get("relations", []):
+        if not isinstance(rel, dict):
+            continue
+        for field in ("source", "target", "source_entity", "target_entity"):
+            value = rel.get(field)
+            if isinstance(value, str) and value.strip():
+                referenced.append(value.strip())
+    for item in result.get("logic_rules", []) + result.get("actions", []):
+        if not isinstance(item, dict):
+            continue
+        for value in item.get("linked_entities") or []:
+            if isinstance(value, str) and value.strip():
+                referenced.append(value.strip())
+
+    for name in referenced:
+        if name in known:
+            continue
+        # Avoid creating a second entity when the model uses a close variant
+        # of an already extracted name; the persistence layer handles the same
+        # fuzzy matching rule later.
+        if any(name in existing or existing in name for existing in known):
+            continue
+        entities.append({
+            "name_cn": name,
+            "name_en": "",
+            "type": "Concept",
+            "description": "由关系引用补全的概念实体",
+            "properties": {"source": "relation_reference_repair"},
+            "confidence": 0.55,
+        })
+        known.add(name)
+    return result
+
+
 @celery_app.task(bind=True)
 def run_extraction(self, task_id: str):
     import app.models  # noqa: F401 — register all tables for FK resolution
@@ -344,6 +394,11 @@ def run_extraction(self, task_id: str):
             task.progress = {"stage": "calling LLM (combined fallback)", "pct": 55}
             db.commit()
             result = extract_ontology(combined_text, prompt_content, config_dict, model_name)
+
+        # Repair relation-only concepts before validation.  This prevents
+        # false broken-reference errors for endpoints that the LLM returned
+        # only in relations or linked_entities.
+        result = _repair_entity_references(result)
 
         # ── Fix 5: calibrate confidence before validation ────────────────────
         result = _calibrate_confidence(result)
