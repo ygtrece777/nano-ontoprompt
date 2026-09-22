@@ -5,7 +5,7 @@ import { useUIStore } from '@/stores/uiStore'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Network, Cpu, Settings, LogOut,
-  Database, ChevronLeft, ChevronRight, GitBranch, Table2,
+  Database, ChevronLeft, ChevronRight, GitBranch, Table2, BarChart3,
 } from 'lucide-react'
 
 interface SubItem {
@@ -31,6 +31,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems: NavItem[] = [
     { to: '/overview', icon: LayoutDashboard, label: t('nav.overview') },
+    { to: '/analytics', icon: BarChart3, label: '分析看板' },
     {
       to: '/data',
       icon: Database,

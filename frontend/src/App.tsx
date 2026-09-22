@@ -22,6 +22,7 @@ import TransformsTab from '@/pages/pipelines/transforms/TransformsTab'
 import CuratedTab from '@/pages/pipelines/curated/CuratedTab'
 import DataManagementPage from '@/pages/data-management/DataManagementPage'
 import StructuredDataPage from '@/pages/data-management/structured/StructuredDataPage'
+import AnalyticsHubPage from '@/pages/analytics/AnalyticsHubPage'
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } }
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<ProtectedRoute><OverviewPage /></ProtectedRoute>} />
+          <Route path="/analytics" element={<ProtectedRoute><AnalyticsHubPage /></ProtectedRoute>} />
 
           {/* ── 数据管理 ── */}
           <Route path="/data" element={<ProtectedRoute><DataManagementPage /></ProtectedRoute>} />

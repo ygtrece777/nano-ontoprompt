@@ -2,7 +2,7 @@ from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Optional
 
-VALID_DOMAINS = ["供应链","采购","财务","医疗","金融","法律","教育","科技","制造","能源","其他"]
+VALID_DOMAINS = ["供应链","采购","财务","医疗","金融","法律","教育","科技","制造","能源","HR","营销","其他"]
 
 class OntologyCreate(BaseModel):
     name: str

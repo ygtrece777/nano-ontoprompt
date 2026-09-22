@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any
 
-def extract_ontology(text: str, prompt_content: str, model_config: dict, model_name: str, retry_count: int = 3) -> dict:
+def extract_ontology(text: str, prompt_content: str, model_config: dict, model_name: str, retry_count: int = 1) -> dict:
     provider = model_config.get("provider", "openai")
     api_key = model_config.get("api_key", "")
     api_base = model_config.get("api_base")
@@ -22,7 +22,8 @@ def extract_ontology(text: str, prompt_content: str, model_config: dict, model_n
 
     for attempt in range(retry_count):
         try:
-            raw = _call_llm(provider, api_key, api_base, model_name, messages)
+            raw = _call_llm(provider, api_key, api_base, model_name, messages,
+                            options=model_config.get("options") or {})
             return _parse_response(raw)
         except Exception as e:
             if attempt == retry_count - 1:
@@ -78,7 +79,8 @@ def infer_relations(entities: list, existing_relations: list, text: str,
     try:
         raw = _call_llm(provider, api_key, api_base, model_name,
                         [{"role": "system", "content": system_prompt},
-                         {"role": "user", "content": user_msg}])
+                         {"role": "user", "content": user_msg}],
+                        options=model_config.get("options") or {})
         parsed = _parse_response(raw)
         candidates = parsed.get("relations", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
 
@@ -95,7 +97,8 @@ def infer_relations(entities: list, existing_relations: list, text: str,
         return []  # relation inference failure is non-fatal
 
 
-def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, messages: list, json_mode: bool = True) -> str:
+def _call_llm(provider: str, api_key: str, api_base: str | None, model: str,
+              messages: list, json_mode: bool = True, options: dict | None = None) -> str:
     # Stable seed for reproducibility: derived from message content so same input → same seed.
     import hashlib as _hashlib, json as _json
     try:
@@ -119,8 +122,15 @@ def _call_llm(provider: str, api_key: str, api_base: str | None, model: str, mes
         if api_base:
             kwargs["base_url"] = api_base
         client = openai.OpenAI(**kwargs)
-        create_kwargs: dict = {"model": model, "messages": messages, "timeout": 300, "max_tokens": 65536,
-                               "temperature": 0, "seed": _seed}
+        options = options or {}
+        # 结构化抽取不需要超长推理；给出可配置上限，避免单个文件长时间占用任务。
+        timeout = int(options.get("timeout", 90))
+        max_tokens = int(options.get("max_tokens", 8192))
+        create_kwargs: dict = {"model": model, "messages": messages, "timeout": timeout,
+                               "max_tokens": max_tokens, "temperature": options.get("temperature", 0),
+                               "seed": _seed}
+        if options.get("enable_thinking") is False:
+            create_kwargs["extra_body"] = {"enable_thinking": False}
         if json_mode:
             create_kwargs["response_format"] = {"type": "json_object"}
         try:

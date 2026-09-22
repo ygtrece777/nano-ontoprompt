@@ -1,7 +1,7 @@
 """v2 Graph API — 基于 Neo4j"""
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from app.deps import get_current_user
 from app.database import SessionLocal
 
@@ -203,8 +203,12 @@ def get_neighbors(ontology_id: str, node_id: str, depth: int = 1):
 # ── 自然语言查询 ──────────────────────────────────────────────────────
 
 class NLQueryRequest(BaseModel):
+    # Keep the public JSON key ``schema`` for API compatibility while using a
+    # non-conflicting Python attribute name internally.
+    model_config = ConfigDict(populate_by_name=True)
+
     question: str
-    schema: dict = {}
+    ontology_schema: dict = Field(default_factory=dict, alias="schema")
 
 
 @router.post("/{ontology_id}/graph/ask")
@@ -212,7 +216,7 @@ def nl_query(ontology_id: str, body: NLQueryRequest):
     """自然语言 → Cypher → 图数据"""
     from app.services.v2.graph.nl2cypher import NL2CypherService
     nl_svc = NL2CypherService()
-    plan = nl_svc.translate(body.question, body.schema)
+    plan = nl_svc.translate(body.question, body.ontology_schema)
 
     svc = get_neo4j()
     if not svc.available:

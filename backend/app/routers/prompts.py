@@ -193,7 +193,7 @@ def trigger_payment_approval(context: dict) -> dict:
   "logic_rules": [{"name_cn": "规则名", "name_en": "RuleName", "formula": "IF 条件 THEN 结论", "description": "描述", "confidence": 0.9, "linked_entities": ["实体name_cn_1", "实体name_cn_2"]}],
   "actions": [{"name_cn": "动作名", "name_en": "ActionName", "execution_rule": "触发条件及执行逻辑", "description": "描述", "confidence": 0.9, "linked_entities": ["实体name_cn_1"], "linked_logic_names": ["逻辑规则name_cn"], "function_code": "def action_name(context: dict) -> dict:\\n    val = context.get('key', 0)\\n    return {'status': 'triggered', 'value': val}"}]
 }"""},
-    {"name": "营销本体提取", "domain": "其他", "content": """你是营销领域本体工程专家。从文档中提取完整的营销与客户运营本体。
+    {"name": "营销本体提取", "domain": "营销", "content": """你是营销领域本体工程专家。从文档中提取完整的营销与客户运营本体。
 
 【实体类型】识别以下所有类型：
 - Category（客户分层/分类）：S级战略客户、A级重点客户、B级成长客户、C级长尾客户等客户分层概念
@@ -233,7 +233,7 @@ def trigger_customer_win_back(context: dict) -> dict:
   "logic_rules": [{"name_cn": "规则名", "name_en": "RuleName", "formula": "IF 条件 THEN 结论", "description": "描述", "confidence": 0.9, "linked_entities": ["实体name_cn_1", "实体name_cn_2"]}],
   "actions": [{"name_cn": "动作名", "name_en": "ActionName", "execution_rule": "触发条件及执行逻辑", "description": "描述", "confidence": 0.9, "linked_entities": ["实体name_cn_1"], "linked_logic_names": ["逻辑规则name_cn"], "function_code": "def action_name(context: dict) -> dict:\\n    val = context.get('key', 0)\\n    return {'status': 'triggered', 'value': val}"}]
 }"""},
-    {"name": "HR本体提取", "domain": "其他", "content": """你是人力资源领域本体工程专家。从文档中提取完整的HR与人才管理本体。
+    {"name": "HR本体提取", "domain": "HR", "content": """你是人力资源领域本体工程专家。从文档中提取完整的HR与人才管理本体。
 
 【实体类型】识别以下所有类型：
 - Organization（组织单元）：集团总部、业务部门（产品研发部/销售与市场/客户成功部/供应链运营/财务与法务/人力资源）

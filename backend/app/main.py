@@ -28,6 +28,7 @@ from app.routers.v2 import graph as graph_v2
 from app.routers.v2 import search as search_v2
 from app.routers.v2 import curated as curated_v2
 from app.routers.v2 import mappings as mappings_v2
+from app.routers.v2 import analytics as analytics_v2
 from app.routers.v2 import incremental as incremental_v2
 from app.routers.v2 import logic_actions as logic_actions_v2
 
@@ -173,6 +174,7 @@ app.include_router(graph_v2.router, prefix="/api/v2/ontologies", tags=["v2-graph
 app.include_router(search_v2.router, prefix="/api/v2/ontologies", tags=["v2-search"])
 app.include_router(curated_v2.router, prefix="/api/v2/curated", tags=["v2-curated"])
 app.include_router(mappings_v2.router, prefix="/api/v2/ontologies", tags=["v2-mappings"])
+app.include_router(analytics_v2.router, prefix="/api/v2/ontologies", tags=["v2-analytics"])
 app.include_router(incremental_v2.router, prefix="/api/v2/incremental", tags=["v2-incremental"])
 app.include_router(logic_actions_v2.router, prefix="/api/v2/ontologies", tags=["v2-logic-actions"])
 

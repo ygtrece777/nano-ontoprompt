@@ -5,9 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import SessionLocal
-from app.deps import get_current_user
+from app.deps import get_current_user, require_admin
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter(dependencies=[Depends(get_current_user)])  # reload mapping fixes
 
 
 def get_db():
@@ -66,14 +66,20 @@ def create_mapping(ontology_id: str, body: CreateMappingRequest, db: Session = D
     field_mapping = dict(body.field_mapping or {})
     if body.property_mappings:
         field_mapping["__properties__"] = body.property_mappings
-    mapping = svc.create_mapping(
-        ontology_id=ontology_id,
-        curated_dataset_id=body.curated_dataset_id,
-        entity_class=body.entity_class,
-        field_mapping=field_mapping,
-        primary_key_column=body.primary_key_column,
-        confidence=body.confidence,
-    )
+    try:
+        mapping = svc.create_mapping(
+            ontology_id=ontology_id,
+            curated_dataset_id=body.curated_dataset_id,
+            entity_class=body.entity_class,
+            field_mapping=field_mapping,
+            primary_key_column=body.primary_key_column,
+            confidence=body.confidence,
+        )
+    except Exception as exc:
+        # Surface the actual database/validation cause instead of hiding it
+        # behind a generic 500.  This also rolls back the failed transaction.
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"创建映射失败: {exc}") from exc
     return {"mapping_id": mapping.id, "status": mapping.status}
 
 
@@ -115,6 +121,28 @@ def list_mappings(ontology_id: str, db: Session = Depends(get_db)):
             "created_at": m.created_at.isoformat() if m.created_at else None,
         })
     return result
+
+
+@router.delete("/{ontology_id}/mappings/{mapping_id}", status_code=204,
+               dependencies=[Depends(require_admin)])
+def delete_mapping(ontology_id: str, mapping_id: str, db: Session = Depends(get_db)):
+    """Delete a mapping and its inferred link mappings."""
+    from app.models.v2.mapping import OntologyMapping, OntologyLinkMapping
+    mapping = db.query(OntologyMapping).filter(
+        OntologyMapping.id == mapping_id,
+        OntologyMapping.ontology_id == ontology_id,
+    ).first()
+    if not mapping:
+        raise HTTPException(404, "Mapping not found")
+    dataset_id = mapping.curated_dataset_id
+    db.delete(mapping)
+    if dataset_id:
+        db.query(OntologyLinkMapping).filter(
+            OntologyLinkMapping.ontology_id == ontology_id,
+            (OntologyLinkMapping.src_dataset_id == dataset_id) |
+            (OntologyLinkMapping.tgt_dataset_id == dataset_id),
+        ).delete(synchronize_session=False)
+    db.commit()
 
 
 @router.post("/{ontology_id}/mappings/{mapping_id}/apply")

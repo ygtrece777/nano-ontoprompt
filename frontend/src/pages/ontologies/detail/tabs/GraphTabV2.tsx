@@ -58,6 +58,21 @@ function nodeColor(labels: string[]): string {
   return stableColor(labels[0] || 'Entity')
 }
 
+function queryRow(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    if (obj.n && typeof obj.n === 'object' && !Array.isArray(obj.n)) return obj.n as Record<string, unknown>
+    return obj
+  }
+  return { result: value }
+}
+
+function queryValue(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
   const navigate = useNavigate()
   const { i18n } = useTranslation()
@@ -138,7 +153,10 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
           size,
           textMaxWidth: size - 12,
           degree,
-          entityId: String(n.properties?.source_id || n.properties?.id || ''),
+          // Neo4j row nodes use their own stable row id, while the detail
+          // page expects an Entity id from the application database.  Row
+          // nodes therefore navigate through their concept entity.
+          entityId: String(n.properties?.concept_id || n.properties?.source_id || n.properties?.id || ''),
         }
       }
     })
@@ -317,6 +335,11 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
     }
   }
 
+  const queryRows = queryResult.map(queryRow)
+  const queryColumns = Array.from(new Set(queryRows.flatMap(row => Object.keys(row))))
+    .filter(key => !['ontology_id', 'updated_at', 'properties', 'concept_id', 'is_concept'].includes(key))
+    .slice(0, 12)
+
   if (loading) return <div className="text-gray-400 text-sm py-8 text-center">加载中...</div>
 
   const neo4jOk = graphData?.neo4j_available
@@ -446,9 +469,24 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
           </div>
 
           {queryResult.length > 0 && (
-            <pre className="text-xs bg-gray-50 border rounded-lg p-3 overflow-auto max-h-40">
-              {JSON.stringify(queryResult, null, 2)}
-            </pre>
+            queryColumns.length > 0 ? (
+              <div className="border rounded-lg overflow-auto max-h-64">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>{queryColumns.map(column => <th key={column} className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap">{column}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {queryRows.map((row, index) => (
+                      <tr key={index} className="border-t">
+                        {queryColumns.map(column => <td key={column} className="px-3 py-2 text-gray-700 whitespace-nowrap">{queryValue(row[column])}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <pre className="text-xs bg-gray-50 border rounded-lg p-3 overflow-auto max-h-40">{JSON.stringify(queryResult, null, 2)}</pre>
+            )
           )}
         </div>
       )}

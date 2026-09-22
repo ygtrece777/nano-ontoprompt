@@ -13,8 +13,6 @@ INDEXES = [
     "CREATE INDEX entity_id IF NOT EXISTS FOR (n:Entity) ON (n.id)",
     # 按名称搜索（关键词查找）
     "CREATE INDEX entity_name_cn IF NOT EXISTS FOR (n:Entity) ON (n.name_cn)",
-    # 通用节点属性索引
-    "CREATE INDEX node_ontology_id IF NOT EXISTS FOR (n) ON (n.ontology_id)",
 ]
 
 # 约束定义（唯一性）
@@ -43,7 +41,7 @@ def setup_indexes(neo4j: Neo4jService | None = None) -> dict:
             logger.info(f"索引创建成功: {stmt[:60]}...")
         except Exception as e:
             results.append({"index": stmt[:60] + "...", "status": "error", "error": str(e)})
-            logger.warning(f"索引创建失败（可能已存在）: {e}")
+            logger.warning(f"索引创建失败: {e}")
 
     svc.close()
     return {"status": "done", "results": results, "count": len(results)}

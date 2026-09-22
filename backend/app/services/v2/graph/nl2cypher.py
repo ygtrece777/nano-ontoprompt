@@ -33,6 +33,11 @@ class NL2CypherService:
         将自然语言问题转为 Cypher。
         先尝试 LLM，失败时用规则模板兜底。
         """
+        # Prefer deterministic answers for well-defined supply-chain fields.
+        # An LLM may return syntactically valid but semantically broad Cypher.
+        q = question or ""
+        if ("\u7269\u6d41" in q or "\u8fd0\u8f93" in q) and ("\u5ef6\u8bef" in q or "\u5ef6\u8fdf" in q):
+            return self._rule_translate(q)
         try:
             return self._llm_translate(question, ontology_schema or {})
         except Exception as e:
@@ -84,6 +89,26 @@ class NL2CypherService:
 
     def _rule_translate(self, question: str) -> CypherPlan:
         """规则模板匹配"""
+        # Deterministic domain rule for the supply-chain delay question. When
+        # no LLM is configured, the generic fallback must not return every
+        # ontology node and unrelated metadata.
+        q = question or ""
+        if ("\u7269\u6d41" in q or "\u8fd0\u8f93" in q) and ("\u5ef6\u8bef" in q or "\u5ef6\u8fdf" in q):
+            return CypherPlan(
+                cypher=(
+                    "MATCH (n) WHERE n.ontology_id = $ontology_id "
+                    "AND n.object_type = 'LogisticsPerformance' "
+                    "AND n.is_concept = false "
+                    "AND (n.on_time = '\u5ef6\u8bef' OR n.on_time = '\u5ef6\u8fdf') "
+                    "RETURN n.waybill_id AS waybill_id, n.carrier AS carrier, "
+                    "n.supplier_id AS supplier_id, n.destination_region AS destination_region, "
+                    "n.actual_days AS actual_days, n.on_time AS on_time, "
+                    "n.damage_rate AS damage_rate, n.freight_yuan AS freight_yuan "
+                    "LIMIT 200"
+                ),
+                explanation="查询物流绩效中状态为延误或延迟的运输记录",
+                confidence=1.0,
+            )
         q_lower = question.lower()
         for keyword, cypher in self.SAFE_PATTERNS:
             if keyword in q_lower or keyword in question:
@@ -94,7 +119,7 @@ class NL2CypherService:
                 )
         # 默认：返回所有节点
         return CypherPlan(
-            cypher="MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 50",
+            cypher="MATCH (n) WHERE n.ontology_id = $ontology_id AND coalesce(n.is_concept, false) = false RETURN n LIMIT 50",
             explanation="默认查询：返回所有节点",
             confidence=0.3,
         )

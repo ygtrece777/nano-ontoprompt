@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiClient } from '@/api/client'
 import { useTranslation } from 'react-i18next'
 import StatusBadge from '@/components/StatusBadge'
+import { BarChart3 } from 'lucide-react'
 
 interface RecentOntology {
   id: string
@@ -31,6 +32,8 @@ const DOMAIN_COLORS: Record<string, string> = {
   '财务': 'bg-yellow-500',
   '法律': 'bg-purple-500',
   '教育': 'bg-pink-500',
+  'HR': 'bg-indigo-500',
+  '营销': 'bg-rose-500',
   '其他': 'bg-gray-400',
 }
 
@@ -59,7 +62,7 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold">{t('overview.title')}</h2>
+      <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">{t('overview.title')}</h2><button onClick={() => navigate('/analytics')} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black text-white text-sm hover:bg-gray-800"><BarChart3 size={15} />打开分析看板</button></div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

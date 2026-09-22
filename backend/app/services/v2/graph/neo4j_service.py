@@ -1,6 +1,7 @@
 """Neo4j 图数据库服务"""
 from __future__ import annotations
 import logging
+import json
 import time
 from typing import Any
 
@@ -13,6 +14,19 @@ except ImportError:  # pragma: no cover
 
 # 连接失败后多少秒内不再重试（避免每个请求都白等连接超时）
 _RETRY_INTERVAL = 60.0
+
+
+def _neo4j_safe_props(props: dict | None) -> dict:
+    """Neo4j properties may only contain scalar values or arrays of scalars."""
+    safe = {}
+    for key, value in (props or {}).items():
+        if isinstance(value, dict):
+            safe[key] = json.dumps(value, ensure_ascii=False, default=str)
+        elif isinstance(value, (list, tuple)) and any(isinstance(item, (dict, list, tuple)) for item in value):
+            safe[key] = json.dumps(value, ensure_ascii=False, default=str)
+        else:
+            safe[key] = value
+    return safe
 
 
 def _port_open(uri: str, timeout: float = 0.5) -> bool:
@@ -107,7 +121,8 @@ class Neo4jService:
         RETURN elementId(n) AS eid
         """
         with self._driver.session() as session:
-            result = session.run(query, key=props.get(key_field), props=props)
+            safe_props = _neo4j_safe_props(props)
+            result = session.run(query, key=safe_props.get(key_field), props=safe_props)
             record = result.single()
             return record["eid"] if record else None
 
@@ -124,7 +139,8 @@ class Neo4jService:
         RETURN r
         """
         with self._driver.session() as session:
-            result = session.run(query, src_key=src_key, tgt_key=tgt_key, props=props or {})
+            result = session.run(query, src_key=src_key, tgt_key=tgt_key,
+                                props=_neo4j_safe_props(props))
             return result.single() is not None
 
     def batch_upsert_entities(self, label: str, entities: list[dict], key_field: str = "id") -> int:
@@ -141,7 +157,8 @@ class Neo4jService:
         with self._driver.session() as session:
             for i in range(0, len(entities), chunk_size):
                 chunk = entities[i:i + chunk_size]
-                batch = [{"key": e.get(key_field), "props": e} for e in chunk]
+                batch = [{"key": _neo4j_safe_props(e).get(key_field),
+                          "props": _neo4j_safe_props(e)} for e in chunk]
                 session.run(query, batch=batch)
                 count += len(chunk)
         return count

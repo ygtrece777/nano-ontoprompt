@@ -27,6 +27,18 @@ backend/uploads/
 # Node
 node_modules/
 frontend/dist/
+
+# Local test and browser automation scripts may contain demo credentials.
+# Keep them out of public repositories; use local copies for development.
+backend/tests/
+frontend/scripts/
+frontend/src/test/
+test_data/*.py
+test_data/*.mjs
+test_data/*.ts
+test_e2e_all_domains.py
+backend/run_full_flow_test.py
+scripts/data/
 frontend/.env.local
 
 # IDE

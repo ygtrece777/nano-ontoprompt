@@ -295,6 +295,7 @@ def run_extraction(self, task_id: str):
             "provider": model_cfg.provider,
             "api_key":  decrypt(model_cfg.api_key_encrypted or ""),
             "api_base": model_cfg.api_base,
+            "options": model_cfg.options or {},
         }
         prompt_content = prompt.content + CONCEPT_INSTANCE_DIRECTIVE
         constraints = task.parameters.get("constraints", [])
@@ -311,7 +312,8 @@ def run_extraction(self, task_id: str):
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         all_results = []
-        max_workers = 1  # serial extraction to avoid OOM with large LLM payloads
+        # 文件提取主要是网络 I/O。限制为 3 路并发，避免 7 个文件串行等待，同时控制 API 限流和本机内存占用。
+        max_workers = min(4, max(1, len(valid_mds)))
         completed = 0
 
         task.progress = {"stage": f"extracting files 0/{len(valid_mds)} (parallel ×{max_workers})", "pct": 20}

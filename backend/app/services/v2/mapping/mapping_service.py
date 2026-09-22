@@ -67,6 +67,13 @@ class MappingService:
                         "confidence": mapping.confidence or 0.85, "version": "v0.1",
                         "ontology_id": mapping.ontology_id}
         self._write_neo4j(mapping.entity_class, [concept_dict])
+        # Also index row-level business records in Neo4j.  The concept node
+        # above describes the ontology; queries need the actual dataset rows.
+        row_entities = self._rows_to_entities(mapping, data)
+        for row_entity in row_entities:
+            row_entity["is_concept"] = False
+            row_entity["concept_id"] = concept_id
+        self._write_neo4j(mapping.entity_class, row_entities)
         mapping.status = "applied"
         self._db.commit()
         return {"mapping_id": mapping_id, "entity_class": mapping.entity_class,
@@ -171,6 +178,13 @@ class MappingService:
                     "properties": entity_obj.properties or {},
                 }
                 self._write_neo4j(m.entity_class, [concept_dict])
+                # Keep row-level instances queryable from graph/Cypher too.
+                rows = mapping_meta.get(m.id, {}).get("rows", [])
+                row_entities = self._rows_to_entities(m, rows)
+                for row_entity in row_entities:
+                    row_entity["is_concept"] = False
+                    row_entity["concept_id"] = cid
+                self._write_neo4j(m.entity_class, row_entities)
                 neo4j_nodes += 1
 
         # ── Phase 2: Relation 推断（概念级别）───────────────────────────
@@ -748,7 +762,12 @@ class MappingService:
     def _row_identity_value(self, row: dict, pk_col: str | None) -> str:
         if pk_col and pk_col != "__row_hash__" and row.get(pk_col) not in (None, ""):
             return f"{pk_col}:{row.get(pk_col)}"
-        return f"row_hash:{self._row_hash(row)}"
+        # Keep the database identity within EntityInstance.row_identity's
+        # varchar(200) limit.  The full row remains in row_data; only its
+        # deterministic SHA-256 digest is used as the identity.
+        import hashlib
+        digest = hashlib.sha256(self._row_hash(row).encode("utf-8")).hexdigest()
+        return f"row_hash:{digest}"
 
     def _lookup_identity_value(self, pk_col: str | None, value: str) -> str:
         if pk_col and pk_col != "__row_hash__":
