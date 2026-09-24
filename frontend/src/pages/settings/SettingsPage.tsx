@@ -531,7 +531,8 @@ export default function SettingsPage() {
                 <input {...regUser('password', { required: true })} placeholder={t('settings.password_required')} type="password"
                   className="border rounded-lg px-3 py-2 text-sm" />
                 <select {...regUser('role')} className="border rounded-lg px-3 py-2 text-sm">
-                  <option value="user">{t('settings.role_user')}</option>
+                  <option value="viewer">{t('settings.role_viewer')}</option>
+                  <option value="editor">{t('settings.role_editor')}</option>
                   <option value="admin">{t('settings.role_admin')}</option>
                 </select>
                 <div className="col-span-2 flex gap-2 justify-end">
@@ -585,7 +586,8 @@ export default function SettingsPage() {
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">{t('settings.col_role')}</label>
                             <select {...regEdit('role')} className="w-full border rounded px-2 py-1.5 text-sm">
-                              <option value="user">{t('settings.role_user')}</option>
+                              <option value="viewer">{t('settings.role_viewer')}</option>
+                              <option value="editor">{t('settings.role_editor')}</option>
                               <option value="admin">{t('settings.role_admin')}</option>
                             </select>
                           </div>
@@ -608,7 +610,7 @@ export default function SettingsPage() {
                       <td className="px-4 py-3 text-gray-500">{u.email || '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
-                          {u.role === 'admin' ? t('settings.role_admin') : t('settings.role_user')}
+                          {t(`settings.role_${u.role}`)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-500">

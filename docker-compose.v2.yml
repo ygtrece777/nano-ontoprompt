@@ -98,6 +98,17 @@ services:
     volumes: [./backend:/app, ./uploads:/uploads]
     command: celery -A app.tasks.extraction worker --loglevel=info
 
+  celery_beat:
+    build: ./backend
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes: [./backend:/app, ./uploads:/uploads]
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+
   frontend:
     build: ./frontend
     ports: ["5173:5173"]

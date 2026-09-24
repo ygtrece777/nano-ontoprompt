@@ -69,14 +69,22 @@ class SQLConnector(ConnectorBase):
 
     def pull_full(self, resource: str) -> list[dict]:
         """查询表全量数据"""
-        import pandas as pd
+        from app.config import settings
         _validate_identifier(resource)
-        query = self._config.get("query") or f"SELECT * FROM {resource}"
-        return pd.read_sql(query, self._get_engine()).to_dict(orient="records")
+        query = (self._config.get("query") or f"SELECT * FROM {resource}").strip().rstrip(";")
+        bounded = text(f"SELECT * FROM ({query}) AS _source LIMIT :_ontoprompt_sync_limit")
+        with self._get_engine().connect() as conn:
+            rows = [dict(row) for row in conn.execute(
+                bounded, {"_ontoprompt_sync_limit": settings.max_sync_rows + 1}
+            ).mappings()]
+        if len(rows) > settings.max_sync_rows:
+            raise ValueError(f"Resource exceeds MAX_SYNC_ROWS={settings.max_sync_rows}")
+        return rows
 
     def pull_delta(self, resource: str, since: str | None = None) -> list[dict]:
         """增量数据查询 (基于 watermark_column)"""
         _validate_identifier(resource)
+        from app.config import settings
         watermark_col = self._config.get("watermark_column")
         if not watermark_col or not since:
             return self.pull_full(resource)
@@ -87,8 +95,14 @@ class SQLConnector(ConnectorBase):
         delta_query = f"""
             SELECT * FROM ({base_query}) _t
             WHERE {watermark_col} > :since
+            LIMIT :_ontoprompt_sync_limit
         """
         with self._get_engine().connect() as conn:
-            result = conn.execute(text(delta_query), {"since": since})
+            result = conn.execute(text(delta_query), {
+                "since": since, "_ontoprompt_sync_limit": settings.max_sync_rows + 1,
+            })
             cols = list(result.keys())
-            return [dict(zip(cols, row)) for row in result]
+            rows = [dict(zip(cols, row)) for row in result]
+            if len(rows) > settings.max_sync_rows:
+                raise ValueError(f"Resource exceeds MAX_SYNC_ROWS={settings.max_sync_rows}")
+            return rows

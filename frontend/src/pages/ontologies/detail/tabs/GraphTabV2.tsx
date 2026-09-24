@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiClientV2 } from '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
 import { Search, Loader2 } from 'lucide-react'
 import OntologySearchBox from '@/components/search/OntologySearchBox'
 import cytoscape from 'cytoscape'
@@ -74,6 +75,7 @@ function queryValue(value: unknown): string {
 }
 
 export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
+  const isAdmin = useAuthStore(s => s.user?.role === 'admin')
   const navigate = useNavigate()
   const { i18n } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -444,7 +446,7 @@ export default function GraphTabV2({ ontologyId }: { ontologyId: string }) {
         <div className="bg-white border rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2">
             <div className="flex border rounded overflow-hidden text-xs">
-              {(['natural', 'cypher'] as const).map(m => (
+              {(['natural', ...(isAdmin ? ['cypher'] as const : [])] as QueryMode[]).map(m => (
                 <button
                   key={m}
                   onClick={() => { setQueryMode(m); setQueryResult([]) }}

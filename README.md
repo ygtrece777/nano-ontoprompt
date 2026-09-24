@@ -95,6 +95,12 @@ docker compose -f docker-compose.v2.yml up --build
 
 This starts PostgreSQL, Redis, Neo4j, MinIO, ChromaDB, backend and frontend. For the lightweight v1 stack use `docker-compose.yml` instead.
 
+These Compose files run development servers with bind mounts and sample credentials. They are intended for local development. A production deployment needs dedicated secrets, TLS, restricted service ports, persistent storage, database migration before application startup, and `ENVIRONMENT=production`.
+
+For a single-host production deployment, use `docker-compose.prod.yml` after setting `POSTGRES_PASSWORD`, matching it in `DATABASE_URL`, setting `SECRET_KEY` to at least 32 random characters, generating a Fernet `ENCRYPTION_KEY`, and replacing the admin, Neo4j, and MinIO passwords. Configure `ALLOWED_CONNECTOR_HOSTS` with the exact hosts the server may connect to. The frontend binds to `127.0.0.1:8080`; put a TLS reverse proxy in front of it. The production Compose file runs Alembic before the API and serves a built frontend.
+
+Generate the encryption key with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` after installing backend dependencies. Keep the same key across restarts and workers; without it, saving connection credentials or model API keys is unavailable.
+
 Open [http://localhost:5173](http://localhost:5173). Default credentials: `admin / admin123`.
 
 ### Option 2 — Manual setup (minimal, no external services)
@@ -152,7 +158,7 @@ nano-ontoprompt/
 │   │   │       └── vector/    # ChromaDB service
 │   │   └── tasks/             # Celery tasks (pipeline run, sync, extraction)
 │   ├── scripts/               # Maintenance scripts (orphan data cleanup, migration)
-│   └── tests/                 # 300+ pytest cases
+│   └── tests/                 # Local test suite (excluded from Git)
 ├── frontend/
 │   ├── scripts/                # One-off debug / demo / test scripts
 │   └── src/
@@ -180,6 +186,8 @@ ENVIRONMENT=development        # "production" enforces non-default secrets at st
 DATABASE_URL=sqlite:///./ontoprompt.db
 SECRET_KEY=change-me
 ENCRYPTION_KEY=                # Fernet key for encrypting stored API keys
+ALLOWED_CONNECTOR_HOSTS=       # Required allowlist for external connectors in production
+POSTGRES_PASSWORD=             # Must match the password in DATABASE_URL for production Compose
 FIRST_ADMIN_USER=admin
 FIRST_ADMIN_PASSWORD=admin123
 
@@ -197,6 +205,12 @@ ALLOWED_UPLOAD_EXTENSIONS=csv,xlsx,xls,json,xml,pdf,docx,doc,pptx,ppt,md,txt
 ENABLE_LLM_FK_DETECTION=0
 ```
 
+Ontologies, connections, pipelines, and datasets are limited to their creator and administrators. Editors may create and run resources they own; administrators manage shared configuration. Existing records without a creator are visible only to administrators. Apply the new dataset ownership migration before starting an existing deployment.
+
+Connection sync supports full snapshots, including scheduled snapshots when Celery worker and beat are running. Durable incremental watermarks are not implemented. The natural-language graph query endpoint accepts only a small set of scoped Cypher patterns; unsupported generated queries return a scoped node listing. The raw Cypher endpoint is administrator-only and uses the same restricted patterns.
+
+The `backend/tests` tree is excluded by `.gitignore` and is not part of the tracked source distribution. Treat local test counts as development artifacts until a reviewed test suite is added to version control.
+
 ---
 
 ## Troubleshooting
@@ -209,13 +223,13 @@ The admin user was seeded with the old default password. Reset it:
 
 ```bash
 # Docker
-docker compose exec backend python scripts/reset_admin_password.py
+docker compose exec backend python -m app.cli.reset_admin_password
 
 # Manual setup
-cd backend && python scripts/reset_admin_password.py
+cd backend && python -m app.cli.reset_admin_password
 ```
 
-Options: `--user <username>` (default `admin`), `--password <new_pwd>` (default `admin123`).
+The command prompts for a new password. `--user <username>` selects another account; `--password <new_pwd>` is available for noninteractive use.
 
 **LLM extraction OOM-killed (macOS / low-memory environments).**
 Parallel extraction with multiple LLM calls can exhaust memory on machines with limited RAM. The code now defaults to serial extraction (`max_workers=1`). If you still hit issues, extract one domain at a time, or reduce the number of uploaded files per ontology.

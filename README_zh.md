@@ -93,6 +93,12 @@ cp .env.example .env          # 生产环境务必修改密钥
 docker compose -f docker-compose.v2.yml up --build
 ```
 
+这些 Compose 配置使用开发服务器、目录挂载和示例凭据，仅适合本地开发。生产部署需要独立密钥、TLS、限制服务端口、持久化存储，并在启动应用前执行数据库迁移，设置 `ENVIRONMENT=production`。
+
+单机生产部署可使用 `docker-compose.prod.yml`：设置 `POSTGRES_PASSWORD` 并同步修改 `DATABASE_URL` 中的密码；设置至少 32 字符的随机 `SECRET_KEY`、Fernet `ENCRYPTION_KEY`，更换管理员、Neo4j 与 MinIO 密码；在 `ALLOWED_CONNECTOR_HOSTS` 中列出允许连接的主机。前端仅监听 `127.0.0.1:8080`，需要在其前面配置 TLS 反向代理。生产 Compose 会先执行 Alembic 迁移，再启动 API 和静态前端。
+
+安装后端依赖后，可运行 `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成加密密钥。重启和多进程运行时必须使用同一密钥；未设置时无法保存连接凭据或模型 API Key。
+
 将启动 PostgreSQL、Redis、Neo4j、MinIO、ChromaDB、后端与前端。轻量 v1 栈可改用 `docker-compose.yml`。
 
 打开 [http://localhost:5173](http://localhost:5173),默认账号 `admin / admin123`。
@@ -152,7 +158,7 @@ nano-ontoprompt/
 │   │   │       └── vector/    # ChromaDB 服务
 │   │   └── tasks/             # Celery 任务 (管道运行、同步、提取)
 │   ├── scripts/               # 维护脚本 (孤儿数据清理、迁移)
-│   └── tests/                 # 300+ pytest 用例
+│   └── tests/                 # 本地测试目录（未纳入 Git）
 ├── frontend/
 │   ├── scripts/                # 一次性调试/演示/测试脚本
 │   └── src/
@@ -180,6 +186,8 @@ ENVIRONMENT=development        # 设为 production 时, 默认密钥未修改将
 DATABASE_URL=sqlite:///./ontoprompt.db
 SECRET_KEY=change-me
 ENCRYPTION_KEY=                # Fernet 密钥, 用于加密存储的 API Key
+ALLOWED_CONNECTOR_HOSTS=       # 生产环境外部连接允许访问的主机列表
+POSTGRES_PASSWORD=             # 生产 Compose 使用，需与 DATABASE_URL 中的密码一致
 FIRST_ADMIN_USER=admin
 FIRST_ADMIN_PASSWORD=admin123
 
@@ -197,6 +205,10 @@ ALLOWED_UPLOAD_EXTENSIONS=csv,xlsx,xls,json,xml,pdf,docx,doc,pptx,ppt,md,txt
 ENABLE_LLM_FK_DETECTION=0
 ```
 
+本体、连接、管道和数据集仅允许创建者及管理员访问；没有创建者记录的旧数据仅管理员可见。已有部署启动前需执行新增的数据集归属迁移。连接同步支持全量快照；运行 Celery worker 与 beat 时也支持定时全量同步。持久化增量水位尚未实现。图谱自然语言查询仅执行受限的本体范围查询模板，无法验证的生成语句会回退到当前本体的节点列表。原始 Cypher 接口仅管理员可用，也受相同模板限制。
+
+`backend/tests` 被 `.gitignore` 排除，当前不属于已跟踪的源码。文档中的本地测试数量不代表仓库附带可运行的测试套件。
+
 ---
 
 ## 故障排查
@@ -209,13 +221,13 @@ admin 用户用旧的默认密码 seed,需要重置:
 
 ```bash
 # Docker
-docker compose exec backend python scripts/reset_admin_password.py
+docker compose exec backend python -m app.cli.reset_admin_password
 
 # 手动启动
-cd backend && python scripts/reset_admin_password.py
+cd backend && python -m app.cli.reset_admin_password
 ```
 
-可选参数: `--user <username>` (默认 `admin`)、`--password <new_pwd>` (默认 `admin123`)。
+命令会提示输入新密码。可用 `--user <username>` 指定账号；非交互环境可传入 `--password <new_pwd>`。
 
 **LLM 提取被 OOM-kill(macOS 或低内存环境)。**
 并行 LLM 提取在内存有限的机器上可能耗尽资源。代码已默认改为串行提取(`max_workers=1`)。如仍遇到问题,可逐域提取,或减少每次提取上传的文件数。

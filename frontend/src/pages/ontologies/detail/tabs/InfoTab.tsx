@@ -259,6 +259,13 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
     }
   }
 
+  const resetStuckTask = () => {
+    pollRef.current?.()
+    try { localStorage.removeItem(lastTaskKey(ontology.id)) } catch {}
+    setTaskStatus(null)
+    setPollTimedOut(false)
+  }
+
   const selectedModel = (models as any[] | undefined)?.find((m: any) => m.id === modelId)
   const activeConstraints = getActiveConstraints(loadRuleStates())
   const fileList = files as any[]
@@ -361,7 +368,18 @@ export default function InfoTab({ ontology }: { ontology: OntologyDetail }) {
       {/* Extraction Progress */}
       {!isPipelineMode && taskStatus && (
         <div className={`bg-white rounded-xl border p-6 ${taskStatus.status === 'failed' ? 'border-red-200 bg-red-50' : ''}`}>
-          <h3 className="font-semibold mb-4">{t('extract.progress')}</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">{t('extract.progress')}</h3>
+            {isExtracting && (
+              <button
+                type="button"
+                onClick={resetStuckTask}
+                className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50"
+              >
+                重置卡住任务
+              </button>
+            )}
+          </div>
 
           {taskStatus.status === 'failed' ? (
             <div className="flex items-start gap-2 text-red-600">

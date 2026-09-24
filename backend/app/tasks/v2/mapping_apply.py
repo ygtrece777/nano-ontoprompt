@@ -19,8 +19,7 @@ def mapping_apply_task(mapping_id: str, ontology_id: str):
     try:
         mapping = db.query(OntologyMapping).filter(OntologyMapping.id == mapping_id).first()
         if not mapping:
-            logger.error(f"Mapping {mapping_id} not found")
-            return
+            raise ValueError(f"Mapping {mapping_id} not found")
 
         # 从关联的 Curated Dataset 获取数据（当前使用 schema 中的 sample_rows）
         ds = db.query(CuratedDataset).filter(
@@ -33,8 +32,10 @@ def mapping_apply_task(mapping_id: str, ontology_id: str):
         svc = MappingService(db)
         result = svc.apply_mapping(mapping_id, data)
         logger.info(f"Mapping applied: {result}")
-    except Exception as e:
-        logger.error(f"Mapping task failed: {e}")
+    except Exception:
+        db.rollback()
+        logger.exception("Mapping task failed for %s", mapping_id)
+        raise
     finally:
         db.close()
 

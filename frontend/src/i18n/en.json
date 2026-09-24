@@ -276,6 +276,8 @@
     "email_optional": "Email (optional)",
     "password_required": "Password *",
     "role_user": "User",
+    "role_viewer": "Viewer",
+    "role_editor": "Editor",
     "role_admin": "Admin",
     "creating": "Creating...",
     "confirm_create": "Create",

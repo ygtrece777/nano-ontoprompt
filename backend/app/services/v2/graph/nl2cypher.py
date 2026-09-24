@@ -36,6 +36,18 @@ class NL2CypherService:
         # Prefer deterministic answers for well-defined supply-chain fields.
         # An LLM may return syntactically valid but semantically broad Cypher.
         q = question or ""
+        if "供应商" in q and "物料" in q:
+            return CypherPlan(
+                cypher=(
+                    "MATCH (s)-[r:SUPPLIED_BY]->(m) "
+                    "WHERE s.ontology_id = $ontology_id AND m.ontology_id = $ontology_id "
+                    "AND s.type = 'Supplier' AND m.type = 'Material' "
+                    "AND coalesce(s.demo_seed, false) = true "
+                    "RETURN s.name_cn AS supplier_name, m.name_cn AS material_name LIMIT 200"
+                ),
+                explanation="查询制造本体中的具体供应商与物料供应关系",
+                confidence=1.0,
+            )
         if ("\u7269\u6d41" in q or "\u8fd0\u8f93" in q) and ("\u5ef6\u8bef" in q or "\u5ef6\u8fdf" in q):
             return self._rule_translate(q)
         try:

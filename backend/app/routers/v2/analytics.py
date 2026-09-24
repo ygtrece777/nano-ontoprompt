@@ -42,6 +42,22 @@ def _risk(props: dict, object_type: str) -> tuple[str, str, str] | None:
 @router.get("/{ontology_id}/analytics")
 def analytics(ontology_id: str):
     from app.routers.v2.graph import get_neo4j
+    from app.database import SessionLocal
+    from app.models.entity import Entity
+    from app.models.entity_instance import EntityInstance
+
+    # 业务实例的权威来源是 EntityInstance，而不是 Neo4j 中用于绘图的展示节点。
+    db = SessionLocal()
+    try:
+        entity_types_db = {
+            e.id: (e.type or "Entity")
+            for e in db.query(Entity).filter(Entity.ontology_id == ontology_id).all()
+        }
+        instance_rows_db = db.query(EntityInstance).filter(EntityInstance.ontology_id == ontology_id).all()
+        db_instance_type_counts = Counter(entity_types_db.get(i.entity_id, "Entity") for i in instance_rows_db)
+        db_instance_count = len(instance_rows_db)
+    finally:
+        db.close()
 
     neo = get_neo4j()
     if not neo.available:
@@ -70,16 +86,19 @@ def analytics(ontology_id: str):
     entity_rows = []
     concepts = 0
     type_counts: Counter[str] = Counter()
+    ontology_type_counts: Counter[str] = Counter()
     status_counts: Counter[str] = Counter()
     source_counts: Counter[str] = Counter()
     risks = []
     for raw in rows:
         props = dict(raw.get("props") or {})
         labels = raw.get("labels") or []
+        ontology_type = _first(props, "object_type", "type") or (_text(labels[0]) if labels else "Entity")
+        ontology_type_counts[ontology_type] += 1
         if props.get("is_concept") is True:
             concepts += 1
             continue
-        object_type = _first(props, "object_type", "type") or (_text(labels[0]) if labels else "Entity")
+        object_type = ontology_type
         type_counts[object_type] += 1
         source = _first(props, "source_dataset", "source", "source_file") or "已映射数据"
         source_counts[source] += 1
@@ -92,13 +111,23 @@ def analytics(ontology_id: str):
             risks.append({"title": title, "reason": reason, "severity": severity, "type": object_type})
         entity_rows.append(props)
 
+    # EntityInstance 是全量统计；只有在旧数据尚未迁移时才回退到图谱行节点。
+    if db_instance_count > 0:
+        type_counts = db_instance_type_counts
+        entity_rows_count = db_instance_count
+    else:
+        entity_rows_count = len(entity_rows)
+
     return {
         "available": True,
         "totals": {
-            "rows": len(entity_rows), "concepts": concepts,
-            "types": len(type_counts), "edges": sum(int(r.get("count", 0)) for r in edge_rows),
+            "rows": entity_rows_count, "concepts": concepts,
+            "types": len(ontology_type_counts), "data_types": len(type_counts),
+            "ontology_entities": len(rows), "edges": sum(int(r.get("count", 0)) for r in edge_rows),
         },
         "entity_types": [{"name": k, "count": v} for k, v in type_counts.most_common(12)],
+        "ontology_entity_types": [{"name": k, "count": v} for k, v in ontology_type_counts.most_common(20)],
+        "relation_types": [{"name": _text(r.get("type")) or "RELATED", "count": int(r.get("count", 0))} for r in edge_rows],
         "status_breakdown": [{"name": k, "count": v} for k, v in status_counts.most_common(12)],
         "risk_items": risks,
         "sources": [{"name": k, "count": v} for k, v in source_counts.most_common(12)],

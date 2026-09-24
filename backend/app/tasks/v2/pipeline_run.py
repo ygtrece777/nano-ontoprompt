@@ -183,13 +183,14 @@ def _source_runtime_route(source: dict, transform_route: str | None, default_rou
     return transform_route or source.get("route") or _route_for_kind(source.get("kind"), default_route)
 
 
-def _find_dataset_for_file(db, filename: str):
+def _find_dataset_for_file(db, filename: str, owner_id: str | None = None):
     from app.models.v2.dataset import Dataset, DatasetVersion
 
     stem = Path(filename).stem
-    candidates = db.query(Dataset).filter(
-        Dataset.name == stem
-    ).order_by(Dataset.created_at.desc()).limit(20).all()
+    query = db.query(Dataset).filter(Dataset.name == stem)
+    if owner_id:
+        query = query.filter(Dataset.created_by == owner_id)
+    candidates = query.order_by(Dataset.created_at.desc()).limit(20).all()
     for candidate in candidates:
         ver = db.query(DatasetVersion).filter(
             DatasetVersion.dataset_id == candidate.id
@@ -201,6 +202,10 @@ def _find_dataset_for_file(db, filename: str):
 
 def _collect_sources(db, pl) -> list[dict]:
     from app.models.v2.dataset import Dataset
+    from app.models.user import User
+
+    owner = db.query(User).filter(User.id == pl.created_by).first() if pl.created_by else None
+    enforce_owner = bool(pl.created_by and (owner is None or owner.role != "admin"))
 
     sources: list[dict] = []
     definition = pl.definition or {}
@@ -211,8 +216,10 @@ def _collect_sources(db, pl) -> list[dict]:
             filename = file_info.get("name") or file_info.get("filename") or ""
             dataset_id = file_info.get("dataset_id")
             ds = db.query(Dataset).filter(Dataset.id == dataset_id).first() if dataset_id else None
+            if ds and enforce_owner and ds.created_by != pl.created_by:
+                raise ValueError("Pipeline source dataset belongs to another user")
             if not ds and filename:
-                ds = _find_dataset_for_file(db, filename)
+                ds = _find_dataset_for_file(db, filename, pl.created_by if enforce_owner else None)
             if ds:
                 sources.append({
                     "dataset_id": ds.id,
@@ -223,6 +230,8 @@ def _collect_sources(db, pl) -> list[dict]:
 
     if not sources and pl.source_dataset_id:
         ds = db.query(Dataset).filter(Dataset.id == pl.source_dataset_id).first()
+        if ds and enforce_owner and ds.created_by != pl.created_by:
+            raise ValueError("Pipeline source dataset belongs to another user")
         if ds:
             sources.append({
                 "dataset_id": ds.id,
@@ -258,7 +267,12 @@ def _load_source_rows(db, svc, source: dict, limit: int = 10000) -> list[dict]:
             "storage_uri": ver.storage_uri,
             "source_dataset_id": source["dataset_id"],
         }]
-    return svc.preview(source["dataset_id"], 1, limit=limit)
+    ver = db.query(DatasetVersion).filter(
+        DatasetVersion.dataset_id == source["dataset_id"]
+    ).order_by(DatasetVersion.version_no.desc()).first()
+    if not ver:
+        raise ValueError(f"Source dataset has no version: {source['dataset_id']}")
+    return svc.preview(source["dataset_id"], ver.version_no, limit=limit)
 
 
 def _execute_route(route: str, ctx, data: list[dict]) -> tuple[list[dict], object]:
@@ -315,7 +329,7 @@ def _save_curated_dataset(db, svc, pl, source: dict, data: list[dict], ctx, mult
         name_parts.append(table_name)
     name_parts.append("curated")
     ds_name = " ".join(name_parts)
-    curated_ds = svc.create_dataset(name=ds_name, kind="curated")
+    curated_ds = svc.create_dataset(name=ds_name, kind="curated", created_by=pl.created_by)
     svc.create_version(curated_ds.id, _safe_csv_bytes(data), rowcount=len(data))
 
     if data:

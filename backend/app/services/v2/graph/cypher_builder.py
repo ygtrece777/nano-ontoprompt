@@ -55,3 +55,30 @@ def validate_readonly_cypher(query: str) -> str | None:
         return ("Query must filter by ontology_id, e.g. "
                 "MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 25")
     return None
+
+
+_SCOPED_NODES = re.compile(
+    r"MATCH\s*\(n\)\s*WHERE\s+n\.ontology_id\s*=\s*\$ontology_id"
+    r"(?:\s+AND\s+n\.[A-Za-z_][A-Za-z0-9_]*\s*=\s*\$[A-Za-z_][A-Za-z0-9_]*)?"
+    r"\s+RETURN\s+n(?:\.[A-Za-z_][A-Za-z0-9_]*)?(?:\s+LIMIT\s+\d+)?",
+    re.IGNORECASE,
+)
+_SCOPED_EDGES = re.compile(
+    r"MATCH\s*\(n\)\s*-\s*\[r\]\s*->\s*\(m\)\s*WHERE\s+"
+    r"n\.ontology_id\s*=\s*\$ontology_id\s+AND\s+"
+    r"m\.ontology_id\s*=\s*\$ontology_id\s+RETURN\s+n\s*,\s*r\s*,\s*m"
+    r"(?:\s+LIMIT\s+\d+)?",
+    re.IGNORECASE,
+)
+
+
+def compile_scoped_cypher(query: str) -> str:
+    """Accept a small read-only grammar with a provable ontology predicate."""
+    statement = query.strip()
+    if not (_SCOPED_NODES.fullmatch(statement) or _SCOPED_EDGES.fullmatch(statement)):
+        raise ValueError("Only scoped node and relationship MATCH queries are supported")
+    limit_match = re.search(r"\s+LIMIT\s+(\d+)\s*$", statement, re.IGNORECASE)
+    limit = min(int(limit_match.group(1)), 200) if limit_match else 50
+    if limit_match:
+        statement = statement[:limit_match.start()]
+    return f"{statement} LIMIT {limit}"

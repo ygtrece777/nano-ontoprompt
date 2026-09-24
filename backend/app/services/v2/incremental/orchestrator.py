@@ -135,8 +135,13 @@ class IncrementalOrchestrator:
         try:
             from app.tasks.v2.pipeline_run import pipeline_run_task
             pipeline_run_task.delay(pipeline_id, run.id)
-        except Exception:
-            pass  # Celery 不可用时仍保留 PipelineRun 记录
+        except Exception as exc:
+            run.status = "failed"
+            run.error_log = f"Task dispatch failed: {exc}"
+            run.finished_at = datetime.now(timezone.utc)
+            self._db.commit()
+            logger.exception("Pipeline dispatch failed for %s", pipeline_id)
+            return None
 
         return run.id
 

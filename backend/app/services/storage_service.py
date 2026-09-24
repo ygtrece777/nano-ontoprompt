@@ -80,19 +80,35 @@ class StorageService:
                 cls._shared_unavailable_until = time.monotonic() + cls._RETRY_INTERVAL
 
     # ── 本地文件系统 fallback ─────────────────────────────────────
-    _LOCAL_BASE = os.path.join(os.path.dirname(__file__), "../../../../storage")
+    _LOCAL_BASE = os.path.join(os.path.dirname(__file__), "../../../uploads/storage")
+    _LEGACY_LOCAL_BASE = os.path.join(os.path.dirname(__file__), "../../../../storage")
 
     @property
     def available(self) -> bool:
-        return True  # 本地 fallback 始终可用
+        return self._available or settings.environment != "production"
 
     def _require_available(self):
-        pass  # 本地 fallback 不需要 MinIO
+        if settings.environment == "production" and not self._available:
+            raise RuntimeError("MinIO is required for production storage")
 
     def _local_path(self, bucket: str, key: str) -> str:
-        p = os.path.join(self._LOCAL_BASE, bucket, key)
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        return p
+        if bucket not in BUCKETS:
+            raise ValueError("Unknown storage bucket")
+        base = os.path.abspath(os.path.join(self._LOCAL_BASE, bucket))
+        path = os.path.abspath(os.path.join(base, key))
+        if os.path.commonpath((base, path)) != base:
+            raise ValueError("Storage key escapes local storage directory")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
+
+    def _legacy_local_path(self, bucket: str, key: str) -> str:
+        if bucket not in BUCKETS:
+            raise ValueError("Unknown storage bucket")
+        base = os.path.abspath(os.path.join(self._LEGACY_LOCAL_BASE, bucket))
+        path = os.path.abspath(os.path.join(base, key))
+        if os.path.commonpath((base, path)) != base:
+            raise ValueError("Storage key escapes legacy storage directory")
+        return path
 
     def ensure_bucket(self, bucket: str) -> None:
         """桶不存在则创建。"""
@@ -129,6 +145,7 @@ class StorageService:
         content_type: str = "application/octet-stream",
     ) -> str:
         """上传 bytes。MinIO 未连接时回退本地文件。"""
+        self._require_available()
         if self._available and self._client:
             return self.put_object(bucket, key, io.BytesIO(data), content_type, length=len(data))
         # 本地回退
@@ -139,6 +156,7 @@ class StorageService:
 
     def get_object(self, uri: str) -> bytes:
         """按 s3://bucket/key URI 下载对象。含本地回退。"""
+        self._require_available()
         bucket, key = self._parse_uri(uri)
         if self._available and self._client:
             resp = self._client.get_object(bucket, key)
@@ -151,6 +169,10 @@ class StorageService:
         local = self._local_path(bucket, key)
         if os.path.exists(local):
             with open(local, "rb") as f:
+                return f.read()
+        legacy = self._legacy_local_path(bucket, key)
+        if os.path.exists(legacy):
+            with open(legacy, "rb") as f:
                 return f.read()
         raise FileNotFoundError(f"Object not found locally: {uri}")
 
@@ -180,6 +202,7 @@ class StorageService:
 
     def object_exists(self, uri: str) -> bool:
         """检查对象是否存在。MinIO 不可用时回退本地文件系统。"""
+        self._require_available()
         bucket, key = self._parse_uri(uri)
         if self._available and self._client:
             try:
@@ -187,7 +210,7 @@ class StorageService:
                 return True
             except S3Error:
                 return False
-        return os.path.exists(os.path.join(self._LOCAL_BASE, bucket, key))
+        return os.path.exists(self._local_path(bucket, key)) or os.path.exists(self._legacy_local_path(bucket, key))
 
     @staticmethod
     def _parse_uri(uri: str) -> tuple[str, str]:
@@ -207,6 +230,11 @@ _storage_service: StorageService | None = None
 
 def get_storage_service() -> StorageService:
     global _storage_service
-    if _storage_service is None:
+    import time
+    if _storage_service is None or (
+        _MINIO_AVAILABLE
+        and not _storage_service._available
+        and time.monotonic() >= StorageService._shared_unavailable_until
+    ):
         _storage_service = StorageService()
     return _storage_service

@@ -18,12 +18,12 @@ export default function LoginPage() {
     setError('')
     try {
       const res = await authApi.login(data.username, data.password) as any
-      localStorage.setItem('token', res.access_token)
+      sessionStorage.setItem('token', res.access_token)
       const profile = await authApi.profile() as any
       setAuth(profile, res.access_token)
       navigate('/')
     } catch (e: any) {
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
       console.error('login failed:', e)
       setError(e?.response ? t('auth.login_error') : t('auth.network_error'))
     } finally {

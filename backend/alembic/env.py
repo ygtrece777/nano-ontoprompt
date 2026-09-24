@@ -18,7 +18,7 @@ if config.config_file_name is not None:
 # Override sqlalchemy.url from the environment if DATABASE_URL is set.
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # add your model's MetaData object here
 # for 'autogenerate' support

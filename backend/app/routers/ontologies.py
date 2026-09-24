@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
-from app.deps import get_db, get_current_user, require_admin, require_editor
+from app.deps import get_db, get_current_user, require_admin, require_editor, require_ontology_access
 from app.models.ontology import OntologyProject
 from app.models.entity import Entity
 from app.models.relation import Relation
@@ -25,9 +25,11 @@ def _combined_count(db, legacy_model, v2_model, ontology_id: str) -> int:
 def list_ontologies(
     name: Optional[str] = None,
     page: int = 1, page_size: int = 20,
-    db: Session = Depends(get_db), _=Depends(get_current_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     q = db.query(OntologyProject)
+    if current_user.role != "admin":
+        q = q.filter(OntologyProject.created_by == current_user.id)
     if name:
         q = q.filter(OntologyProject.name.ilike(f"%{name}%"))
     total = q.count()
@@ -57,14 +59,14 @@ def create_ontology(body: OntologyCreate, db: Session = Depends(get_db), current
     db.add(project); db.commit(); db.refresh(project)
     return {"data": OntologyOut.model_validate(project).model_dump()}
 
-@router.get("/{ontology_id}")
+@router.get("/{ontology_id}", dependencies=[Depends(require_ontology_access)])
 def get_ontology(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
     p = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
     if not p:
         raise HTTPException(404, "Not found")
     return {"data": OntologyOut.model_validate(p).model_dump()}
 
-@router.put("/{ontology_id}")
+@router.put("/{ontology_id}", dependencies=[Depends(require_ontology_access)])
 def update_ontology(ontology_id: str, body: OntologyUpdate, db: Session = Depends(get_db), _=Depends(require_editor)):
     p = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
     if not p:
@@ -74,7 +76,7 @@ def update_ontology(ontology_id: str, body: OntologyUpdate, db: Session = Depend
     db.commit(); db.refresh(p)
     return {"data": OntologyOut.model_validate(p).model_dump()}
 
-@router.delete("/{ontology_id}", status_code=204)
+@router.delete("/{ontology_id}", status_code=204, dependencies=[Depends(require_ontology_access)])
 def delete_ontology(ontology_id: str, db: Session = Depends(get_db), _=Depends(require_admin)):
     p = db.query(OntologyProject).filter(OntologyProject.id == ontology_id).first()
     if not p:

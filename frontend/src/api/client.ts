@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { useAuthStore } from '@/stores/authStore'
 
 type ApiClient = {
   get: <T = any>(url: string, config?: AxiosRequestConfig) => Promise<T>
@@ -10,15 +11,15 @@ type ApiClient = {
 function createApiClient(baseURL: string): ApiClient {
   const client = axios.create({ baseURL })
   client.interceptors.request.use(config => {
-    const token = localStorage.getItem('token')
+    const token = sessionStorage.getItem('token')
     if (token) config.headers.Authorization = `Bearer ${token}`
     return config
   })
   client.interceptors.response.use(
     res => res.data.data !== undefined ? res.data.data : res.data,
     err => {
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        localStorage.removeItem('token')
+      if (err.response?.status === 401) {
+        useAuthStore.getState().logout()
         window.location.href = '/login'
       }
       return Promise.reject(err.response?.data ?? err)

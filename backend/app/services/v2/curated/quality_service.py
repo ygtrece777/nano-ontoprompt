@@ -29,6 +29,10 @@ class QualityReport:
     columns: list[ColumnQuality]
     duplicate_count: int
     issues: list[str]              # 质量问题描述列表
+    analyzed_rows: int = 0
+    coverage_pct: float = 0.0
+    issue_details: list[dict] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -41,6 +45,10 @@ class QualityReport:
             "overall_score": round(self.overall_score, 3),
             "duplicate_count": self.duplicate_count,
             "issues": self.issues,
+            "analyzed_rows": self.analyzed_rows or self.row_count,
+            "coverage_pct": round(self.coverage_pct or 100.0, 1),
+            "issue_details": self.issue_details,
+            "recommendations": self.recommendations,
             "columns": [
                 {
                     "name": c.name,
@@ -72,12 +80,18 @@ class QualityService:
                 completeness_score=1.0, uniqueness_score=1.0,
                 validity_score=1.0, overall_score=1.0,
                 columns=[], duplicate_count=0, issues=["数据集为空"],
+                analyzed_rows=0, coverage_pct=100.0,
+                issue_details=[{"severity": "error", "code": "empty_dataset", "message": "数据集为空"}],
+                recommendations=["先完成数据生成或发布，再进行质量审核"],
             )
 
         row_count = len(data)
-        columns_names = list(data[0].keys())
+        # 合并所有行的字段，避免首行缺字段导致漏检
+        columns_names = list(dict.fromkeys(k for row in data for k in row.keys()))
         column_count = len(columns_names)
         issues = []
+        issue_details = []
+        recommendations = []
 
         # ── 列级质量分析 ──────────────────────────────────────────
         col_qualities = []
@@ -107,7 +121,14 @@ class QualityService:
             ))
 
             if null_pct > 50:
-                issues.append(f"列 '{col}' 空值率过高：{null_pct:.1f}%")
+                message = f"列 '{col}' 空值率过高：{null_pct:.1f}%"
+                issues.append(message)
+                issue_details.append({"severity": "error", "code": "high_null_rate", "column": col, "message": message})
+                recommendations.append(f"补齐或删除字段 '{col}' 的大量空值，并确认它是否应为必填字段")
+            elif null_pct > 20:
+                message = f"列 '{col}' 存在较多空值：{null_pct:.1f}%"
+                issues.append(message)
+                issue_details.append({"severity": "warning", "code": "null_rate", "column": col, "message": message})
 
         # ── 完整性分数（非空率均值） ────────────────────────────────
         avg_null_rate = sum(null_rates) / len(null_rates) if null_rates else 0
@@ -125,11 +146,21 @@ class QualityService:
         uniqueness_score = 1.0 - duplicate_count / row_count
 
         if duplicate_count > 0:
-            issues.append(f"发现 {duplicate_count} 行重复数据")
+            message = f"发现 {duplicate_count} 行重复数据"
+            issues.append(message)
+            issue_details.append({"severity": "warning", "code": "duplicate_rows", "message": message})
+            recommendations.append("配置业务主键并在入库前执行去重，避免仅按整行去重")
 
         # ── 有效性分数（类型一致性：非 mixed 列占比） ────────────────
         mixed_cols = sum(1 for cq in col_qualities if cq.inferred_type == "mixed")
         validity_score = 1.0 - mixed_cols / column_count if column_count else 1.0
+        if mixed_cols:
+            for cq in col_qualities:
+                if cq.inferred_type == "mixed":
+                    message = f"列 '{cq.name}' 存在混合数据类型"
+                    issues.append(message)
+                    issue_details.append({"severity": "error", "code": "mixed_type", "column": cq.name, "message": message})
+                    recommendations.append(f"统一字段 '{cq.name}' 的数据类型，并处理无法转换的值")
 
         # ── 综合分数 ────────────────────────────────────────────────
         overall_score = (completeness_score * 0.4 + uniqueness_score * 0.4 + validity_score * 0.2)
@@ -145,6 +176,10 @@ class QualityService:
             columns=col_qualities,
             duplicate_count=duplicate_count,
             issues=issues,
+            analyzed_rows=row_count,
+            coverage_pct=100.0,
+            issue_details=issue_details,
+            recommendations=list(dict.fromkeys(recommendations)),
         )
 
     @staticmethod

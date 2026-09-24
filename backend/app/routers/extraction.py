@@ -7,6 +7,7 @@ from app.models.file import UploadedFile
 from app.models.ontology import OntologyProject
 from app.services.document_service import combine_converted_files
 from app.schemas.extraction import ExtractionRequest, ExtractionTaskOut
+from app.config import settings
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -44,20 +45,25 @@ def start_extraction(ontology_id: str, body: ExtractionRequest, db: Session = De
     project.status = "creating"
     db.commit()
 
-    # Queue Celery task
-    try:
+    # Local development commonly starts only FastAPI, without a Celery worker.
+    # Running through Redis in that setup leaves tasks permanently at queued.
+    # Use a background thread in development; production keeps the durable queue.
+    import threading
+    def run_sync():
         from app.tasks.extraction import run_extraction
-        run_extraction.delay(task.id)
-    except Exception:
-        # If celery not available, run synchronously in background thread
-        import threading
-        def run_sync():
+        try:
+            run_extraction(task.id)
+        except Exception:
+            logger.exception("synchronous extraction failed for task %s", task.id)
+
+    if settings.environment == "development":
+        threading.Thread(target=run_sync, daemon=True, name=f"extraction-{task.id[:8]}").start()
+    else:
+        try:
             from app.tasks.extraction import run_extraction
-            try:
-                run_extraction(task.id)
-            except Exception:
-                logger.exception("synchronous extraction failed for task %s", task.id)
-        threading.Thread(target=run_sync, daemon=True).start()
+            run_extraction.delay(task.id)
+        except Exception:
+            threading.Thread(target=run_sync, daemon=True, name=f"extraction-{task.id[:8]}").start()
 
     return {"data": {"task_id": task.id}, "message": "Extraction queued"}
 

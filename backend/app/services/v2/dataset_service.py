@@ -14,10 +14,11 @@ class DatasetService:
         self._db = db
         self._storage = storage or get_storage_service()
 
-    def create_dataset(self, name: str, kind: str, connection_id: str | None = None) -> Dataset:
-        ds = Dataset(name=name, kind=kind, source_connection_id=connection_id)
+    def create_dataset(self, name: str, kind: str, connection_id: str | None = None,
+                       created_by: str | None = None) -> Dataset:
+        ds = Dataset(name=name, kind=kind, source_connection_id=connection_id, created_by=created_by)
         self._db.add(ds)
-        self._db.commit()
+        self._db.flush()
         self._db.refresh(ds)
         return ds
 
@@ -34,7 +35,7 @@ class DatasetService:
         version_no = (last_ver.version_no + 1) if last_ver else 1
 
         # 存入 MinIO
-        checksum = hashlib.sha256(data[:1024]).hexdigest()[:16]
+        checksum = hashlib.sha256(data).hexdigest()
         key = f"datasets/{dataset_id}/v{version_no}/data.bin"
         uri = self._storage.put_bytes("raw-datasets", key, data)
 
@@ -46,6 +47,7 @@ class DatasetService:
             checksum=checksum,
         )
         self._db.add(ver)
+        self._db.flush()
         ds.latest_version_id = ver.id
         self._db.commit()
         self._db.refresh(ver)
@@ -110,8 +112,8 @@ class DatasetService:
                                 break
                     wb.close()
                     return rows_list
-                except Exception:
-                    pass
+                except Exception as exc:
+                    raise ValueError("Failed to preview Excel dataset") from exc
 
             # 默认 CSV
             import csv, io
@@ -123,4 +125,5 @@ class DatasetService:
                 rows.append(dict(row))
             return rows
         except Exception:
-            return []
+            self._db.rollback()
+            raise

@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timezone
 from app.database import SessionLocal
-from app.deps import get_current_user, require_admin, require_editor
+from app.deps import get_current_user, require_admin, require_editor, require_pipeline_access
+from app.models.user import User
 from app.models.v2.pipeline import Pipeline, PipelineRun, PipelineVersion
+from app.models.v2.dataset import Dataset
 # 确保 Dataset 模型先导入以解析 FK
 import app.models.v2.dataset  # noqa: F401
 
@@ -71,10 +73,27 @@ class ValidateResult(BaseModel):
     warnings: list[dict] = []
 
 
+def _check_source_access(db: Session, user: User, source_dataset_id: str | None,
+                         definition: dict | None) -> None:
+    if user.role == "admin":
+        return
+    ids = {source_dataset_id} if source_dataset_id else set()
+    for node in (definition or {}).get("nodes", []):
+        for item in (node.get("config") or {}).get("files", []) or []:
+            if item.get("dataset_id"):
+                ids.add(item["dataset_id"])
+    for dataset_id in ids:
+        dataset = db.query(Dataset).filter(Dataset.id == dataset_id,
+                                           Dataset.created_by == user.id).first()
+        if dataset is None:
+            raise HTTPException(404, "Source dataset not found")
+
+
 # ── CRUD ──────────────────────────────────────────────────────────
 
 @router.post("", response_model=PipelineResponse, status_code=201, dependencies=[Depends(require_editor)])
-def create_pipeline(body: PipelineCreate, db: Session = Depends(get_db)):
+def create_pipeline(body: PipelineCreate, db: Session = Depends(get_db), current_user: User = Depends(require_editor)):
+    _check_source_access(db, current_user, body.source_dataset_id, body.definition)
     """创建新 Pipeline。支持旧 steps 格式和新 nodes/edges DSL。"""
     # 重名校验
     existing = db.query(Pipeline).filter(
@@ -104,6 +123,7 @@ def create_pipeline(body: PipelineCreate, db: Session = Depends(get_db)):
         status="draft",
         branch="main",
         version=1,
+        created_by=current_user.id,
     )
     db.add(pl)
     db.commit()
@@ -117,9 +137,12 @@ def list_pipelines(
     domain: str = "",
     status: str = "",
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Pipeline 列表，支持按名称/ID/域/状态搜索。"""
     q = db.query(Pipeline)
+    if current_user.role != "admin":
+        q = q.filter(Pipeline.created_by == current_user.id)
     if search:
         q = q.filter(
             Pipeline.name.ilike(f"%{search}%") | Pipeline.id.ilike(f"%{search}%")
@@ -145,7 +168,7 @@ def list_pipelines(
     return results
 
 
-@router.get("/{pipeline_id}", response_model=PipelineResponse)
+@router.get("/{pipeline_id}", response_model=PipelineResponse, dependencies=[Depends(require_pipeline_access)])
 def get_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pl:
@@ -153,11 +176,16 @@ def get_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
     return _format_pipeline(pl)
 
 
-@router.put("/{pipeline_id}", response_model=PipelineResponse, dependencies=[Depends(require_editor)])
-def update_pipeline(pipeline_id: str, body: PipelineUpdate, db: Session = Depends(get_db)):
+@router.put("/{pipeline_id}", response_model=PipelineResponse, dependencies=[Depends(require_editor), Depends(require_pipeline_access)])
+def update_pipeline(pipeline_id: str, body: PipelineUpdate, db: Session = Depends(get_db),
+                    current_user: User = Depends(require_editor)):
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pl:
         raise HTTPException(404, "Pipeline not found")
+
+    _check_source_access(db, current_user,
+                         body.source_dataset_id if body.source_dataset_id is not None else pl.source_dataset_id,
+                         body.definition if body.definition is not None else pl.definition)
 
     update_data = body.model_dump(exclude_unset=True)
     for k, v in update_data.items():
@@ -168,7 +196,7 @@ def update_pipeline(pipeline_id: str, body: PipelineUpdate, db: Session = Depend
     return _format_pipeline(pl)
 
 
-@router.delete("/{pipeline_id}", dependencies=[Depends(require_admin)])
+@router.delete("/{pipeline_id}", dependencies=[Depends(require_admin), Depends(require_pipeline_access)])
 def delete_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pl:
@@ -183,7 +211,7 @@ def delete_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
 
 # ── Validate ──────────────────────────────────────────────────────
 
-@router.post("/{pipeline_id}/validate", response_model=ValidateResult)
+@router.post("/{pipeline_id}/validate", response_model=ValidateResult, dependencies=[Depends(require_pipeline_access)])
 def validate_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
     """校验 Pipeline definition 是否合法。"""
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
@@ -260,7 +288,7 @@ def validate_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
 
 # ── Publish ───────────────────────────────────────────────────────
 
-@router.post("/{pipeline_id}/publish")
+@router.post("/{pipeline_id}/publish", dependencies=[Depends(require_editor), Depends(require_pipeline_access)])
 def publish_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
     """发布 Pipeline 为稳定版本。"""
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
@@ -296,7 +324,7 @@ def publish_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
 
 # ── Versions ──────────────────────────────────────────────────────
 
-@router.get("/{pipeline_id}/versions")
+@router.get("/{pipeline_id}/versions", dependencies=[Depends(require_pipeline_access)])
 def list_versions(pipeline_id: str, db: Session = Depends(get_db)):
     """查看版本历史。"""
     versions = db.query(PipelineVersion).filter(
@@ -315,7 +343,7 @@ def list_versions(pipeline_id: str, db: Session = Depends(get_db)):
 
 # ── Run (保留原有) ────────────────────────────────────────────────
 
-@router.post("/{pipeline_id}/run")
+@router.post("/{pipeline_id}/run", dependencies=[Depends(require_editor), Depends(require_pipeline_access)])
 def run_pipeline(pipeline_id: str, db: Session = Depends(get_db)):
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
     if not pl:
@@ -353,7 +381,7 @@ def _ensure_broker_reachable(timeout: float = 2.0):
     sock.close()
 
 
-@router.get("/{pipeline_id}/runs")
+@router.get("/{pipeline_id}/runs", dependencies=[Depends(require_pipeline_access)])
 def list_runs(pipeline_id: str, db: Session = Depends(get_db)):
     runs = db.query(PipelineRun).filter(PipelineRun.pipeline_id == pipeline_id).order_by(PipelineRun.created_at.desc()).all()
     return [
@@ -368,9 +396,12 @@ def list_runs(pipeline_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/runs/{run_id}")
-def get_run(run_id: str, db: Session = Depends(get_db)):
+def get_run(run_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     run = db.query(PipelineRun).filter(PipelineRun.id == run_id).first()
     if not run:
+        raise HTTPException(404, "Run not found")
+    pipeline = db.query(Pipeline).filter(Pipeline.id == run.pipeline_id).first()
+    if pipeline is None or (current_user.role != "admin" and pipeline.created_by != current_user.id):
         raise HTTPException(404, "Run not found")
     return {
         "id": run.id,
@@ -382,7 +413,7 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/{pipeline_id}/run-sync")
+@router.post("/{pipeline_id}/run-sync", dependencies=[Depends(require_editor), Depends(require_pipeline_access)])
 def run_pipeline_sync(pipeline_id: str, db: Session = Depends(get_db)):
     """同步执行 Pipeline（无需 Celery/Redis，适用于开发/测试）"""
     pl = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_admin, require_editor
 from app.models.action import Action
 from app.schemas.action import ActionCreate, ActionUpdate, ActionOut
 import uuid
@@ -13,7 +13,7 @@ def list_actions(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_
     return {"data": [ActionOut.model_validate(a).model_dump() for a in items]}
 
 @router.post("", status_code=201)
-def create_action(ontology_id: str, body: ActionCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def create_action(ontology_id: str, body: ActionCreate, db: Session = Depends(get_db), _=Depends(require_editor)):
     data = {k: v for k, v in body.model_dump().items() if v is not None}
     a = Action(id=str(uuid.uuid4()), ontology_id=ontology_id, **data)
     db.add(a); db.commit(); db.refresh(a)
@@ -27,7 +27,7 @@ def get_action(ontology_id: str, action_id: str, db: Session = Depends(get_db), 
     return {"data": ActionOut.model_validate(a).model_dump()}
 
 @router.put("/{action_id}")
-def update_action(ontology_id: str, action_id: str, body: ActionUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_action(ontology_id: str, action_id: str, body: ActionUpdate, db: Session = Depends(get_db), _=Depends(require_editor)):
     a = db.query(Action).filter(Action.id == action_id, Action.ontology_id == ontology_id).first()
     if not a:
         raise HTTPException(404, "Not found")
@@ -37,7 +37,7 @@ def update_action(ontology_id: str, action_id: str, body: ActionUpdate, db: Sess
     return {"data": ActionOut.model_validate(a).model_dump()}
 
 @router.delete("/{action_id}", status_code=204)
-def delete_action(ontology_id: str, action_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def delete_action(ontology_id: str, action_id: str, db: Session = Depends(get_db), _=Depends(require_admin)):
     a = db.query(Action).filter(Action.id == action_id, Action.ontology_id == ontology_id).first()
     if not a:
         raise HTTPException(404, "Not found")
@@ -45,7 +45,7 @@ def delete_action(ontology_id: str, action_id: str, db: Session = Depends(get_db
 
 
 @router.post("/{action_id}/toggle")
-def toggle_action(ontology_id: str, action_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def toggle_action(ontology_id: str, action_id: str, db: Session = Depends(get_db), _=Depends(require_editor)):
     a = db.query(Action).filter(Action.id == action_id, Action.ontology_id == ontology_id).first()
     if not a:
         raise HTTPException(404, "Not found")
@@ -67,7 +67,7 @@ def toggle_action(ontology_id: str, action_id: str, db: Session = Depends(get_db
 
 
 @router.post("/publish")
-def publish_actions(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def publish_actions(ontology_id: str, db: Session = Depends(get_db), _=Depends(require_editor)):
     acts = db.query(Action).filter(
         Action.ontology_id == ontology_id,
         Action.status != 'published',

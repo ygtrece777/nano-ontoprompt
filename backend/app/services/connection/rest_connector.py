@@ -31,8 +31,21 @@ class RestConnector(ConnectorBase):
     """
 
     def __init__(self, config: dict):
+        from urllib.parse import urlsplit
+        for endpoint in config.get("endpoints", []):
+            parsed = urlsplit(endpoint)
+            if parsed.scheme or parsed.netloc or not endpoint.startswith("/") or endpoint.startswith("//"):
+                raise ValueError("REST endpoints must be relative paths under base_url")
         self._config = config
         self._session = None
+
+    @staticmethod
+    def _validate_resource(resource: str) -> str:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(resource)
+        if parsed.scheme or parsed.netloc or not resource.startswith("/") or resource.startswith("//"):
+            raise ValueError("REST resource must be a relative path under base_url")
+        return resource
 
     def _get_session(self):
         """返回 httpx 会话实例 (延迟初始化)"""
@@ -71,6 +84,7 @@ class RestConnector(ConnectorBase):
         return self._config.get("endpoints", [])
 
     def pull_sample(self, resource: str, limit: int = 100) -> list[dict]:
+        resource = self._validate_resource(resource)
         """从端点查询样本数据"""
         try:
             params = dict(self._config.get("params", {}))
@@ -80,9 +94,11 @@ class RestConnector(ConnectorBase):
             return self._extract_records(resp.json())[:limit]
         except Exception as e:
             logger.warning(f"REST pull_sample 失败: {e}")
-            return []
+            raise
 
     def pull_full(self, resource: str) -> list[dict]:
+        resource = self._validate_resource(resource)
+        from app.config import settings
         """通过分页查询全量数据"""
         pagination = self._config.get("pagination", {})
         page_param = pagination.get("page_param", "page")
@@ -103,6 +119,8 @@ class RestConnector(ConnectorBase):
                 if not records:
                     break
                 all_records.extend(records)
+                if len(all_records) > settings.max_sync_rows:
+                    raise ValueError(f"Resource exceeds MAX_SYNC_ROWS={settings.max_sync_rows}")
                 # 检查是否存在下一页
                 if isinstance(data, dict):
                     if not data.get("next") and len(records) < 100:
@@ -110,14 +128,16 @@ class RestConnector(ConnectorBase):
                 else:
                     break
                 page += 1
-                if page > 100:  # 安全上限
-                    break
-        except Exception as e:
-            logger.warning(f"REST pull_full 失败: {e}")
+                if page > 1000:
+                    raise ValueError("REST pagination exceeded 1000 pages")
+        except Exception:
+            logger.exception("rest_connector pull_full failed")
+            raise
 
         return all_records
 
     def pull_delta(self, resource: str, since: str | None = None) -> list[dict]:
+        resource = self._validate_resource(resource)
         """增量查询: 将 since 参数加入查询串后请求"""
         if not since:
             return self.pull_full(resource)
@@ -128,9 +148,9 @@ class RestConnector(ConnectorBase):
             resp = self._get_session().get(resource, params=params)
             resp.raise_for_status()
             return self._extract_records(resp.json())
-        except Exception as e:
-            logger.warning(f"REST pull_delta 失败: {e}")
-            return []
+        except Exception:
+            logger.exception("rest_connector pull_delta failed")
+            raise
 
     def _extract_records(self, data: Any) -> list[dict]:
         """从 API 响应中提取记录列表"""

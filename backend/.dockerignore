@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.dev.example
+.venv/
+__pycache__/
+*.pyc
+*.db
+uploads/
+tests/
+scripts/

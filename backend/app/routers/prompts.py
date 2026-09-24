@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_admin, require_editor
 from app.models.prompt import Prompt
 from app.models.extraction_task import ExtractionTask
 from app.models.user import User
@@ -293,6 +293,28 @@ def trigger_retention_review(context: dict) -> dict:
 }"""},
 ]
 
+BUILTIN_PROMPTS.append({
+    "name": "制造质量管理本体提取",
+    "domain": "制造",
+    "content": """你是制造业与质量管理领域的本体工程专家。请从输入的生产管理、工艺、设备和质量控制文档中提取结构化本体信息，严格只返回 JSON，不要输出 Markdown 或额外解释。
+
+重点识别实体类型：Factory（工厂）、ProductionLine（生产线）、WorkOrder（生产工单）、Equipment（设备）、Material（物料）、Product（产品）、Batch（生产批次）、Process（工艺）、QualityInspection（质量检验）、Defect（质量缺陷）、MaintenanceTask（维修任务）、Supplier（供应商）、Employee（员工）、QualityStandard（质量标准）。
+
+重点识别关系类型：LOCATED_IN、CONTAINS、USES_MATERIAL、PRODUCES、ASSIGNED_TO、USES_EQUIPMENT、FOLLOWS_PROCESS、HAS_BATCH、INSPECTS、HAS_DEFECT、TRIGGERS_MAINTENANCE、SUPPLIED_BY、CONFORMS_TO。
+
+请从文档中提取：实体、实体属性、实体之间的关系、质量和生产逻辑规则、可以执行的业务动作。规则优先使用 IF-THEN 语义，例如设备故障时暂停工单、质量检验不合格时隔离批次、缺陷率超过阈值时触发质量预警、关键设备到期时生成维修任务。
+
+返回格式：
+{
+  "entities": [{"name_cn":"中文名称","name_en":"EnglishName","type":"EntityType","description":"描述","properties":{},"confidence":0.9}],
+  "relations": [{"source":"实体中文名称","target":"实体中文名称","type":"RELATION_TYPE","description":"关系说明","confidence":0.85}],
+  "logic_rules": [{"name_cn":"规则名称","name_en":"RuleName","formula":"IF 条件 THEN 结果","description":"规则说明","confidence":0.9,"linked_entities":["实体名称"]}],
+  "actions": [{"name_cn":"动作名称","name_en":"ActionName","execution_rule":"触发条件和执行逻辑","description":"动作说明","confidence":0.9,"linked_entities":["实体名称"],"linked_logic_names":["规则名称"],"function_code":"def action_name(context: dict) -> dict:\n    return {'status': 'triggered'}"}]
+}
+
+要求：实体必须有至少一个有意义的 properties；关系的 source 和 target 必须引用已提取实体；规则和动作必须填写 linked_entities；不要把普通数值、日期或单独字段误当作实体。"""
+})
+
 @router.get("/templates")
 def get_builtin_templates(_=Depends(get_current_user)):
     """Return hardcoded builtin prompt templates (not from DB)."""
@@ -307,7 +329,7 @@ def list_prompts(domain: Optional[str] = None, db: Session = Depends(get_db), _=
     return {"data": [PromptOut.model_validate(p).model_dump() for p in prompts]}
 
 @router.post("", status_code=201)
-def create_prompt(body: PromptCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_prompt(body: PromptCreate, db: Session = Depends(get_db), current_user: User = Depends(require_editor)):
     prompt = Prompt(id=str(uuid.uuid4()), name=body.name, domain=body.domain,
                     content=body.content, version=body.version, created_by=current_user.id)
     db.add(prompt); db.commit(); db.refresh(prompt)
@@ -326,7 +348,7 @@ def get_prompt(prompt_id: str, db: Session = Depends(get_db), _=Depends(get_curr
     return {"data": PromptOut.model_validate(p).model_dump()}
 
 @router.put("/{prompt_id}")
-def update_prompt(prompt_id: str, body: PromptUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_prompt(prompt_id: str, body: PromptUpdate, db: Session = Depends(get_db), _=Depends(require_editor)):
     p = db.query(Prompt).filter(Prompt.id == prompt_id).first()
     if not p:
         raise HTTPException(404, "Not found")
@@ -336,7 +358,7 @@ def update_prompt(prompt_id: str, body: PromptUpdate, db: Session = Depends(get_
     return {"data": PromptOut.model_validate(p).model_dump()}
 
 @router.delete("/{prompt_id}", status_code=204)
-def delete_prompt(prompt_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def delete_prompt(prompt_id: str, db: Session = Depends(get_db), _=Depends(require_admin)):
     p = db.query(Prompt).filter(Prompt.id == prompt_id).first()
     if not p:
         raise HTTPException(404, "Not found")

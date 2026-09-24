@@ -71,18 +71,22 @@ class MongoConnector(ConnectorBase):
             return []
 
     def pull_full(self, resource: str) -> list[dict]:
+        from app.config import settings
         """查询全量数据 (排除 _id 字段, 避免序列化问题)"""
         try:
             collection = self._get_db()[resource]
             docs = []
-            for doc in collection.find({}, {"_id": 0}):
+            for doc in collection.find({}, {"_id": 0}).limit(settings.max_sync_rows + 1):
                 docs.append(doc)
+            if len(docs) > settings.max_sync_rows:
+                raise ValueError(f"Resource exceeds MAX_SYNC_ROWS={settings.max_sync_rows}")
             return docs
-        except Exception as e:
-            logger.warning(f"MongoDB pull_full 失败: {e}")
-            return []
+        except Exception:
+            logger.exception("mongo_connector pull_full failed")
+            raise
 
     def pull_delta(self, resource: str, since: str | None = None) -> list[dict]:
+        from app.config import settings
         """
         增量查询: 以 _id(ObjectId 含插入时间戳)作为水位线。
         since 传入上次同步的最大 _id 字符串。
@@ -93,9 +97,11 @@ class MongoConnector(ConnectorBase):
             from bson import ObjectId
             collection = self._get_db()[resource]
             docs = []
-            for doc in collection.find({"_id": {"$gt": ObjectId(since)}}, {"_id": 0}):
+            for doc in collection.find({"_id": {"$gt": ObjectId(since)}}, {"_id": 0}).limit(settings.max_sync_rows + 1):
                 docs.append(doc)
+            if len(docs) > settings.max_sync_rows:
+                raise ValueError(f"Resource exceeds MAX_SYNC_ROWS={settings.max_sync_rows}")
             return docs
-        except Exception as e:
-            logger.warning(f"MongoDB pull_delta 失败: {e}")
-            return self.pull_full(resource)
+        except Exception:
+            logger.exception("mongo_connector pull_delta failed")
+            raise

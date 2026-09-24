@@ -2,7 +2,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from app.deps import get_current_user
+from app.deps import get_current_user, require_admin, require_editor
 from app.database import SessionLocal
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -165,21 +165,21 @@ def integration_status(ontology_id: str):
     }
 
 
-@router.post("/{ontology_id}/graph/cypher")
+@router.post("/{ontology_id}/graph/cypher", dependencies=[Depends(require_admin)])
 def run_cypher(ontology_id: str, body: CypherRequest):
     """执行 Cypher 查询 (只读校验 + 强制 ontology_id 过滤)"""
-    from app.services.v2.graph.cypher_builder import validate_readonly_cypher
-
-    error = validate_readonly_cypher(body.query)
-    if error:
-        raise HTTPException(400, error)
+    from app.services.v2.graph.cypher_builder import compile_scoped_cypher
+    try:
+        query = compile_scoped_cypher(body.query)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     svc = get_neo4j()
     if not svc.available:
         return {"results": [], "neo4j_available": False}
     params = dict(body.params or {})
     params["ontology_id"] = ontology_id  # 供查询中的 $ontology_id 使用, 防跨本体读取
-    results = svc.run_cypher(body.query, params)
+    results = svc.run_cypher(query, params)
     svc.close()
     return {"results": results, "neo4j_available": True}
 
@@ -215,26 +215,34 @@ class NLQueryRequest(BaseModel):
 def nl_query(ontology_id: str, body: NLQueryRequest):
     """自然语言 → Cypher → 图数据"""
     from app.services.v2.graph.nl2cypher import NL2CypherService
+    from app.services.v2.graph.cypher_builder import compile_scoped_cypher
     nl_svc = NL2CypherService()
     plan = nl_svc.translate(body.question, body.ontology_schema)
+    try:
+        query = compile_scoped_cypher(plan.cypher)
+    except ValueError:
+        query = compile_scoped_cypher(
+            "MATCH (n) WHERE n.ontology_id = $ontology_id RETURN n LIMIT 50"
+        )
+        plan.explanation = "查询超出安全模板，已返回当前本体的节点"
 
     svc = get_neo4j()
     if not svc.available:
-        return {"results": [], "cypher": plan.cypher, "explanation": plan.explanation, "neo4j_available": False}
+        return {"results": [], "cypher": query, "explanation": plan.explanation, "neo4j_available": False}
 
     try:
-        results = svc.run_cypher(plan.cypher, {"ontology_id": ontology_id})
+        results = svc.run_cypher(query, {"ontology_id": ontology_id})
         svc.close()
         return {
             "results": results,
-            "cypher": plan.cypher,
+            "cypher": query,
             "explanation": plan.explanation,
             "confidence": plan.confidence,
             "neo4j_available": True,
         }
     except Exception as e:
         svc.close()
-        return {"results": [], "cypher": plan.cypher, "error": str(e), "neo4j_available": True}
+        return {"results": [], "cypher": query, "error": str(e), "neo4j_available": True}
 
 
 # ── 高级图分析 ─────────────────────────────────────────────────────────
@@ -263,7 +271,7 @@ def top_nodes(ontology_id: str, limit: int = 10):
     return {"nodes": svc.top_connected_nodes(ontology_id, limit)}
 
 
-@router.post("/{ontology_id}/graph/sync")
+@router.post("/{ontology_id}/graph/sync", dependencies=[Depends(require_editor)])
 def sync_graph(ontology_id: str):
     """将 SQLite 实体/关系全量同步到 Neo4j"""
     from app.database import SessionLocal

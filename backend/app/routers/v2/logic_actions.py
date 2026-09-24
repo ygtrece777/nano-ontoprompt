@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timezone
 from app.database import SessionLocal
-from app.deps import get_current_user
+from app.deps import get_current_user, require_admin, require_editor
 from app.models.user import User
 from app.models.v2.logic import OntologyLogicRule, OntologyStateMachine
 from app.models.v2.action import OntologyActionType, OntologyActionRun
@@ -61,7 +61,7 @@ def list_logic_rules(ontology_id: str, logic_type: str = "", db: Session = Depen
             for r in rules]
 
 
-@router.post("/{ontology_id}/logic", status_code=201)
+@router.post("/{ontology_id}/logic", status_code=201, dependencies=[Depends(require_editor)])
 def create_logic_rule(ontology_id: str, body: LogicRuleCreate, db: Session = Depends(get_db)):
     rule = OntologyLogicRule(
         ontology_id=ontology_id, name=body.name, logic_type=body.logic_type,
@@ -73,7 +73,7 @@ def create_logic_rule(ontology_id: str, body: LogicRuleCreate, db: Session = Dep
     return {"id": rule.id, "name": rule.name, "status": rule.status}
 
 
-@router.put("/{ontology_id}/logic/{rule_id}")
+@router.put("/{ontology_id}/logic/{rule_id}", dependencies=[Depends(require_editor)])
 def update_logic_rule(ontology_id: str, rule_id: str, body: LogicRuleCreate, db: Session = Depends(get_db)):
     rule = db.query(OntologyLogicRule).filter(
         OntologyLogicRule.id == rule_id, OntologyLogicRule.ontology_id == ontology_id
@@ -122,7 +122,7 @@ def test_logic_rule(ontology_id: str, rule_id: str, body: LogicTestRequest, db: 
     return {"rule_id": rule.id, **_evaluate_logic_rule(rule, body.row or {}, body.parameters or {})}
 
 
-@router.delete("/{ontology_id}/logic/{rule_id}")
+@router.delete("/{ontology_id}/logic/{rule_id}", dependencies=[Depends(require_admin)])
 def delete_logic_rule(ontology_id: str, rule_id: str, db: Session = Depends(get_db)):
     rule = db.query(OntologyLogicRule).filter(
         OntologyLogicRule.id == rule_id, OntologyLogicRule.ontology_id == ontology_id
@@ -133,7 +133,7 @@ def delete_logic_rule(ontology_id: str, rule_id: str, db: Session = Depends(get_
     return {"status": "deleted"}
 
 
-@router.post("/{ontology_id}/logic/publish")
+@router.post("/{ontology_id}/logic/publish", dependencies=[Depends(require_editor)])
 def publish_logic_rules_v2(ontology_id: str, db: Session = Depends(get_db)):
     from app.models.logic import LogicRule as LogicRuleV1
 
@@ -158,7 +158,7 @@ def publish_logic_rules_v2(ontology_id: str, db: Session = Depends(get_db)):
 
 # ── Logic: Discovery ────────────────────────────────────────────
 
-@router.post("/{ontology_id}/logic/discover")
+@router.post("/{ontology_id}/logic/discover", dependencies=[Depends(require_editor)])
 def discover_logic_rules(ontology_id: str, db: Session = Depends(get_db)):
     """发现 Logic Rules（同步写入 v2 + v1 表，供前端 LogicTab 读取）"""
     from app.services.v2.mapping.mapping_service import MappingService
@@ -274,7 +274,7 @@ def list_action_types(ontology_id: str, category: str = "", db: Session = Depend
              "created_at": a.created_at.isoformat() if a.created_at else None} for a in actions]
 
 
-@router.post("/{ontology_id}/actions", status_code=201)
+@router.post("/{ontology_id}/actions", status_code=201, dependencies=[Depends(require_editor)])
 def create_action_type(ontology_id: str, body: ActionTypeCreate, db: Session = Depends(get_db)):
     act = OntologyActionType(
         ontology_id=ontology_id, name=body.name, action_category=body.action_category,
@@ -287,7 +287,7 @@ def create_action_type(ontology_id: str, body: ActionTypeCreate, db: Session = D
     return {"id": act.id, "name": act.name, "status": act.status}
 
 
-@router.post("/{ontology_id}/actions/{action_id}/review")
+@router.post("/{ontology_id}/actions/{action_id}/review", dependencies=[Depends(require_editor)])
 def review_action_type(ontology_id: str, action_id: str, body: ActionReviewRequest, db: Session = Depends(get_db)):
     act = db.query(OntologyActionType).filter(
         OntologyActionType.id == action_id, OntologyActionType.ontology_id == ontology_id
@@ -317,7 +317,7 @@ def review_action_type(ontology_id: str, action_id: str, body: ActionReviewReque
     return {"id": act.id, "enabled": act.enabled, "status": act.status}
 
 
-@router.post("/{ontology_id}/actions/discover")
+@router.post("/{ontology_id}/actions/discover", dependencies=[Depends(require_editor)])
 def discover_actions(ontology_id: str, db: Session = Depends(get_db)):
     """发现 Actions（同步写入 v2 + v1 表，供前端 ActionsTab 读取）"""
     from app.services.v2.mapping.mapping_service import MappingService
@@ -373,7 +373,7 @@ def discover_actions(ontology_id: str, db: Session = Depends(get_db)):
     return {"discovered": len(created), "total_v2": tv2, "total_v1": tv1}
 
 
-@router.delete("/{ontology_id}/actions/{action_id}")
+@router.delete("/{ontology_id}/actions/{action_id}", dependencies=[Depends(require_admin)])
 def delete_action_type(ontology_id: str, action_id: str, db: Session = Depends(get_db)):
     act = db.query(OntologyActionType).filter(
         OntologyActionType.id == action_id, OntologyActionType.ontology_id == ontology_id
@@ -384,7 +384,7 @@ def delete_action_type(ontology_id: str, action_id: str, db: Session = Depends(g
     return {"status": "deleted"}
 
 
-@router.post("/{ontology_id}/actions/publish")
+@router.post("/{ontology_id}/actions/publish", dependencies=[Depends(require_editor)])
 def publish_actions_v2(ontology_id: str, db: Session = Depends(get_db)):
     from app.models.action import Action as ActionV1
 
@@ -419,7 +419,7 @@ def list_action_runs(ontology_id: str, limit: int = 20, db: Session = Depends(ge
              "started_at": r.started_at.isoformat() if r.started_at else None} for r in runs]
 
 
-@router.post("/{ontology_id}/actions/{action_id}/run")
+@router.post("/{ontology_id}/actions/{action_id}/run", dependencies=[Depends(require_editor)])
 def run_action_type(
     ontology_id: str,
     action_id: str,

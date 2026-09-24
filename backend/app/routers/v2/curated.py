@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import SessionLocal
-from app.deps import get_current_user, require_admin
+from app.deps import (get_current_user, require_admin, require_editor,
+                      require_curated_access, require_review_access)
+from app.models.user import User
 from app.models.v2.curated import CuratedDataset, CuratedReview
 
 logger = logging.getLogger(__name__)
@@ -34,10 +36,13 @@ class CuratedDatasetResponse(BaseModel):
 
 
 @router.get("", response_model=list[CuratedDatasetResponse])
-def list_curated(db: Session = Depends(get_db)):
+def list_curated(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """列出所有 Curated Dataset（从 v2_datasets 读 kind=curated）"""
     from app.models.v2.dataset import Dataset, DatasetVersion
-    rows = db.query(Dataset).filter(Dataset.kind == "curated").order_by(Dataset.created_at.desc()).all()
+    query = db.query(Dataset).filter(Dataset.kind == "curated")
+    if current_user.role != "admin":
+        query = query.filter(Dataset.created_by == current_user.id)
+    rows = query.order_by(Dataset.created_at.desc()).all()
     # Batch fetch all reviews for displayed datasets to avoid N+1
     dataset_ids = [r.id for r in rows]
     all_reviews = db.query(CuratedReview).filter(
@@ -88,7 +93,7 @@ def delete_curated(dataset_id: str, db: Session = Depends(get_db), _admin=Depend
     db.commit()
 
 
-@router.get("/{dataset_id}", response_model=CuratedDatasetResponse)
+@router.get("/{dataset_id}", response_model=CuratedDatasetResponse, dependencies=[Depends(require_curated_access)])
 def get_curated(dataset_id: str, db: Session = Depends(get_db)):
     # 先查旧 curated 表，再查 v2_datasets
     ds = db.query(CuratedDataset).filter(CuratedDataset.id == dataset_id).first()
@@ -102,7 +107,7 @@ def get_curated(dataset_id: str, db: Session = Depends(get_db)):
     return ds
 
 
-@router.get("/{dataset_id}/preview")
+@router.get("/{dataset_id}/preview", dependencies=[Depends(require_curated_access)])
 def preview_curated(dataset_id: str, limit: int = 100, db: Session = Depends(get_db)):
     """数据预览 — 从 v2_datasets 存储读取实际数据行"""
     from app.services.v2.dataset_service import DatasetService
@@ -123,11 +128,12 @@ def preview_curated(dataset_id: str, limit: int = 100, db: Session = Depends(get
         svc = DatasetService(db)
         rows = svc.preview(dataset_id, 1, limit=limit)
         return {"dataset_id": dataset_id, "name": name, "rows": rows, "count": len(rows)}
-    except Exception as e:
-        return {"dataset_id": dataset_id, "name": name, "rows": [], "count": 0, "error": str(e)}
+    except Exception:
+        logger.exception("Curated preview failed for %s", dataset_id)
+        raise HTTPException(503, "Curated data is temporarily unavailable")
 
 
-@router.get("/{dataset_id}/quality")
+@router.get("/{dataset_id}/quality", dependencies=[Depends(require_curated_access)])
 def get_quality_report(dataset_id: str, db: Session = Depends(get_db)):
     """获取质量报告（支持旧 curated 表和新 v2_datasets curated）"""
     from app.services.v2.curated.quality_service import QualityService
@@ -150,14 +156,30 @@ def get_quality_report(dataset_id: str, db: Session = Depends(get_db)):
             svc2 = DatasetService(db)
             sample_data = svc2.preview(dataset_id, 1, limit=200)
         except Exception:
-            sample_data = []
+            logger.exception("Curated quality source failed for %s", dataset_id)
+            raise HTTPException(503, "Curated data is temporarily unavailable")
 
     svc = QualityService(db)
     report = svc.compute_report(dataset_id, sample_data)
+    # 报告明确标注分析覆盖率：当前接口可能只读取预览样本，不能伪装成全量结果。
+    total_rows = None
+    if ds and isinstance(ds.schema_json, dict):
+        total_rows = ds.schema_json.get("row_count") or ds.schema_json.get("total_rows")
+    if total_rows and int(total_rows) > 0:
+        report.coverage_pct = min(100.0, len(sample_data) / int(total_rows) * 100)
+        if report.coverage_pct < 100:
+            report.issues.insert(0, f"当前为抽样报告：分析 {len(sample_data)} 行 / 共 {int(total_rows)} 行")
+            report.issue_details.insert(0, {
+                "severity": "info", "code": "sampled_report",
+                "message": f"当前为抽样报告，覆盖率 {report.coverage_pct:.1f}%"
+            })
+            report.recommendations.insert(0, "发布前执行全量质量校验，避免抽样结果替代全量结论")
+    else:
+        report.coverage_pct = 100.0
     return report.to_dict()
 
 
-@router.post("/{dataset_id}/review")
+@router.post("/{dataset_id}/review", dependencies=[Depends(require_curated_access)])
 def submit_review(
     dataset_id: str,
     action: str,  # "approve" | "reject"
@@ -215,7 +237,7 @@ class BatchEditRequest(BaseModel):
     edits: list[dict]  # [{row_pk, field_name, old_value, new_value}]
 
 
-@router.post("/{dataset_id}/reviews")
+@router.post("/{dataset_id}/reviews", dependencies=[Depends(require_editor), Depends(require_curated_access)])
 def start_review(dataset_id: str, db: Session = Depends(get_db)):
     """为数据集启动审核流程"""
     from app.services.v2.curated.review_service import ReviewService
@@ -224,7 +246,7 @@ def start_review(dataset_id: str, db: Session = Depends(get_db)):
     return {"review_id": review.id, "status": review.status}
 
 
-@router.get("/reviews/{review_id}")
+@router.get("/reviews/{review_id}", dependencies=[Depends(require_review_access)])
 def get_review(review_id: str, db: Session = Depends(get_db)):
     """获取审核记录详情"""
     from app.models.v2.curated import CuratedReview
@@ -240,7 +262,7 @@ def get_review(review_id: str, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/reviews/{review_id}/edits")
+@router.post("/reviews/{review_id}/edits", dependencies=[Depends(require_editor), Depends(require_review_access)])
 def add_edit(review_id: str, body: BatchEditRequest, db: Session = Depends(get_db)):
     """批量提交行编辑"""
     from app.services.v2.curated.review_service import ReviewService
@@ -249,7 +271,7 @@ def add_edit(review_id: str, body: BatchEditRequest, db: Session = Depends(get_d
     return {"saved": len(edits)}
 
 
-@router.post("/reviews/{review_id}/approve")
+@router.post("/reviews/{review_id}/approve", dependencies=[Depends(require_review_access)])
 def approve_review(review_id: str, notes: str = "", db: Session = Depends(get_db),
                    _admin=Depends(require_admin)):
     """审核通过"""
@@ -259,7 +281,7 @@ def approve_review(review_id: str, notes: str = "", db: Session = Depends(get_db
     return {"review_id": review.id, "status": review.status}
 
 
-@router.post("/reviews/{review_id}/reject")
+@router.post("/reviews/{review_id}/reject", dependencies=[Depends(require_review_access)])
 def reject_review(review_id: str, notes: str = "", db: Session = Depends(get_db),
                   _admin=Depends(require_admin)):
     """审核拒绝"""

@@ -1,0 +1,101 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ontoprompt
+      POSTGRES_USER: ontoprompt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: [pg_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ontoprompt -d ontoprompt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+
+  neo4j:
+    image: neo4j:5.20-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD}
+    volumes: [neo4j_data:/data]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?Set MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?Set MINIO_SECRET_KEY}
+    volumes: [minio_data:/data]
+
+  chromadb:
+    image: chromadb/chroma:0.5.20
+    volumes: [chroma_data:/chroma/chroma]
+
+  migrate:
+    build: ./backend
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+    depends_on:
+      db:
+        condition: service_healthy
+    command: alembic upgrade head
+    restart: "no"
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      CHROMA_PORT: 8000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes: [uploads:/uploads]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+
+  celery_worker:
+    build: ./backend
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      CHROMA_PORT: 8000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    volumes: [uploads:/uploads]
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    restart: unless-stopped
+
+  celery_beat:
+    build: ./backend
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports: ["127.0.0.1:8080:80"]
+    depends_on: [backend]
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  neo4j_data:
+  minio_data:
+  chroma_data:
+  uploads:

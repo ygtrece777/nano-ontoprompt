@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import SessionLocal
-from app.deps import get_current_user, require_admin
+from app.deps import get_current_user, require_admin, require_editor, require_curated_access
+from app.models.user import User
 
 router = APIRouter(dependencies=[Depends(get_current_user)])  # reload mapping fixes
 
@@ -59,8 +60,10 @@ def suggest_mapping(ontology_id: str, body: SuggestRequest, db: Session = Depend
     }
 
 
-@router.post("/{ontology_id}/mappings")
-def create_mapping(ontology_id: str, body: CreateMappingRequest, db: Session = Depends(get_db)):
+@router.post("/{ontology_id}/mappings", dependencies=[Depends(require_editor)])
+def create_mapping(ontology_id: str, body: CreateMappingRequest, db: Session = Depends(get_db),
+                   current_user: User = Depends(require_editor)):
+    require_curated_access(body.curated_dataset_id, db, current_user)
     from app.services.v2.mapping.mapping_service import MappingService
     svc = MappingService(db)
     field_mapping = dict(body.field_mapping or {})
@@ -145,16 +148,25 @@ def delete_mapping(ontology_id: str, mapping_id: str, db: Session = Depends(get_
     db.commit()
 
 
-@router.post("/{ontology_id}/mappings/{mapping_id}/apply")
-def apply_mapping(ontology_id: str, mapping_id: str, data: list[dict], db: Session = Depends(get_db)):
+@router.post("/{ontology_id}/mappings/{mapping_id}/apply", dependencies=[Depends(require_editor)])
+def apply_mapping(ontology_id: str, mapping_id: str, data: list[dict], db: Session = Depends(get_db),
+                  current_user: User = Depends(require_editor)):
+    from app.models.v2.mapping import OntologyMapping
+    mapping = db.query(OntologyMapping).filter(OntologyMapping.id == mapping_id,
+                                               OntologyMapping.ontology_id == ontology_id).first()
+    if mapping is None:
+        raise HTTPException(404, "Mapping not found")
+    if mapping.curated_dataset_id:
+        require_curated_access(mapping.curated_dataset_id, db, current_user)
     from app.services.v2.mapping.mapping_service import MappingService
     svc = MappingService(db)
     result = svc.apply_mapping(mapping_id, data)
     return result
 
 
-@router.post("/{ontology_id}/mappings/{mapping_id}/apply-from-dataset")
-def apply_mapping_from_dataset(ontology_id: str, mapping_id: str, db: Session = Depends(get_db)):
+@router.post("/{ontology_id}/mappings/{mapping_id}/apply-from-dataset", dependencies=[Depends(require_editor)])
+def apply_mapping_from_dataset(ontology_id: str, mapping_id: str, db: Session = Depends(get_db),
+                               current_user: User = Depends(require_editor)):
     from app.models.v2.mapping import OntologyMapping
     from app.services.v2.mapping.mapping_service import MappingService
     from app.services.v2.dataset_service import DatasetService
@@ -167,6 +179,7 @@ def apply_mapping_from_dataset(ontology_id: str, mapping_id: str, db: Session = 
         raise HTTPException(404, "Mapping not found")
     if not mapping.curated_dataset_id:
         raise HTTPException(400, "Mapping has no curated_dataset_id")
+    require_curated_access(mapping.curated_dataset_id, db, current_user)
 
     try:
         ds_svc = DatasetService(db)
@@ -179,10 +192,14 @@ def apply_mapping_from_dataset(ontology_id: str, mapping_id: str, db: Session = 
     return result
 
 
-@router.post("/{ontology_id}/mappings/build-all")
-def build_all_mappings(ontology_id: str, db: Session = Depends(get_db)):
+@router.post("/{ontology_id}/mappings/build-all", dependencies=[Depends(require_editor)])
+def build_all_mappings(ontology_id: str, db: Session = Depends(get_db),
+                       current_user: User = Depends(require_editor)):
     from app.services.v2.mapping.mapping_service import MappingService
-    from app.models.v2.mapping import OntologyLinkMapping
+    from app.models.v2.mapping import OntologyLinkMapping, OntologyMapping
+    for mapping in db.query(OntologyMapping).filter(OntologyMapping.ontology_id == ontology_id):
+        if mapping.curated_dataset_id:
+            require_curated_access(mapping.curated_dataset_id, db, current_user)
     svc = MappingService(db)
     try:
         result = svc.build_all(ontology_id)
@@ -209,8 +226,11 @@ class LinkMappingCreate(BaseModel):
     tgt_key: str
 
 
-@router.post("/{ontology_id}/link-mappings")
-def create_link_mapping(ontology_id: str, body: LinkMappingCreate, db: Session = Depends(get_db)):
+@router.post("/{ontology_id}/link-mappings", dependencies=[Depends(require_editor)])
+def create_link_mapping(ontology_id: str, body: LinkMappingCreate, db: Session = Depends(get_db),
+                        current_user: User = Depends(require_editor)):
+    require_curated_access(body.src_dataset_id, db, current_user)
+    require_curated_access(body.tgt_dataset_id, db, current_user)
     from app.models.v2.mapping import OntologyLinkMapping
     from app.services.v2.dataset_service import DatasetService
 

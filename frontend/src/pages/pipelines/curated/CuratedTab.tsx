@@ -23,6 +23,10 @@ interface QualityReport {
   duplicate_count: number
   issues: string[]
   columns: Array<{ name: string; null_pct: number; distinct_count: number; inferred_type: string }>
+  analyzed_rows: number
+  coverage_pct: number
+  issue_details: Array<{ severity: string; code: string; column?: string; message: string }>
+  recommendations: string[]
 }
 
 interface PreviewData {
@@ -283,16 +287,26 @@ export default function CuratedTab() {
                             </div>
                             <div className="flex gap-4 text-xs text-gray-500">
                               <span>行数：{report.row_count}</span>
+                              <span>分析行数：{report.analyzed_rows}</span>
                               <span>列数：{report.column_count}</span>
+                              <span className={report.coverage_pct < 100 ? 'text-amber-600' : 'text-green-600'}>覆盖率：{report.coverage_pct.toFixed(1)}%</span>
                               {report.duplicate_count > 0 && (
                                 <span className="text-yellow-600">⚠️ 重复：{report.duplicate_count}</span>
                               )}
                             </div>
                             {report.issues.length > 0 && (
                               <div className="space-y-1">
-                                {report.issues.map((iss, i) => (
-                                  <div key={i} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded">⚠️ {iss}</div>
+                                {report.issue_details?.map((iss, i) => (
+                                  <div key={i} className={`text-xs px-2 py-1 rounded ${iss.severity === 'error' ? 'bg-red-50 text-red-700' : iss.severity === 'info' ? 'bg-blue-50 text-blue-700' : 'bg-yellow-50 text-yellow-700'}`}>{iss.severity === 'error' ? '⛔' : iss.severity === 'info' ? 'ⓘ' : '⚠️'} {iss.message}</div>
                                 ))}
+                              </div>
+                            )}
+                            {report.recommendations?.length > 0 && (
+                              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                                <div className="mb-1 text-xs font-semibold text-blue-800">改进建议</div>
+                                <ul className="list-disc space-y-1 pl-4 text-xs text-blue-700">
+                                  {report.recommendations.map((item, i) => <li key={i}>{item}</li>)}
+                                </ul>
                               </div>
                             )}
                             {report.columns.length > 0 && (

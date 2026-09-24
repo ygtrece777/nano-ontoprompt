@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.deps import get_db, get_current_user
+from app.deps import get_db, get_current_user, require_admin, require_editor
 from app.models.logic import LogicRule
 from app.schemas.logic import LogicRuleCreate, LogicRuleUpdate, LogicRuleOut
 import uuid
@@ -13,7 +13,7 @@ def list_logic(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_cu
     return {"data": [LogicRuleOut.model_validate(r).model_dump() for r in items]}
 
 @router.post("", status_code=201)
-def create_logic(ontology_id: str, body: LogicRuleCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def create_logic(ontology_id: str, body: LogicRuleCreate, db: Session = Depends(get_db), _=Depends(require_editor)):
     data = {k: v for k, v in body.model_dump().items() if v is not None}
     r = LogicRule(id=str(uuid.uuid4()), ontology_id=ontology_id, **data)
     db.add(r); db.commit(); db.refresh(r)
@@ -27,7 +27,7 @@ def get_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=
     return {"data": LogicRuleOut.model_validate(r).model_dump()}
 
 @router.put("/{logic_id}")
-def update_logic(ontology_id: str, logic_id: str, body: LogicRuleUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_logic(ontology_id: str, logic_id: str, body: LogicRuleUpdate, db: Session = Depends(get_db), _=Depends(require_editor)):
     r = db.query(LogicRule).filter(LogicRule.id == logic_id, LogicRule.ontology_id == ontology_id).first()
     if not r:
         raise HTTPException(404, "Not found")
@@ -37,7 +37,7 @@ def update_logic(ontology_id: str, logic_id: str, body: LogicRuleUpdate, db: Ses
     return {"data": LogicRuleOut.model_validate(r).model_dump()}
 
 @router.delete("/{logic_id}", status_code=204)
-def delete_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def delete_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(require_admin)):
     r = db.query(LogicRule).filter(LogicRule.id == logic_id, LogicRule.ontology_id == ontology_id).first()
     if not r:
         raise HTTPException(404, "Not found")
@@ -45,7 +45,7 @@ def delete_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db),
 
 
 @router.post("/{logic_id}/toggle")
-def toggle_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def toggle_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db), _=Depends(require_editor)):
     """Human Review: 启用/禁用规则"""
     r = db.query(LogicRule).filter(LogicRule.id == logic_id, LogicRule.ontology_id == ontology_id).first()
     if not r:
@@ -68,7 +68,7 @@ def toggle_logic(ontology_id: str, logic_id: str, db: Session = Depends(get_db),
 
 
 @router.post("/publish")
-def publish_logic_rules(ontology_id: str, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def publish_logic_rules(ontology_id: str, db: Session = Depends(get_db), _=Depends(require_editor)):
     """Human Review: 发布所有草稿规则"""
     rules = db.query(LogicRule).filter(
         LogicRule.ontology_id == ontology_id,

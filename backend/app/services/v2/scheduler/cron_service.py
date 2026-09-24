@@ -54,7 +54,7 @@ class CronService:
             "pipeline_id": pipeline_id,
             "cron": cron_expr,
             "celery_crontab": cron_params,
-            "status": "scheduled",
+            "status": "configured",
         }
 
     def describe_cron(self, expression: str) -> str:

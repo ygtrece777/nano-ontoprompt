@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.deps import get_current_user
+from app.deps import get_current_user, require_editor, require_dataset_access
+from app.models.user import User
+from app.models.v2.dataset import Dataset
 from app.services.v2.dataset_service import DatasetService
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -23,8 +25,9 @@ class DatasetResponse(BaseModel):
     class Config:
         from_attributes = True
 
-@router.post("/upload", status_code=201)
-async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get_db)):
+@router.post("/upload", status_code=201, dependencies=[Depends(require_editor)])
+async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get_db),
+                         current_user: User = Depends(require_editor)):
     """上传 CSV/Excel 文件，自动创建 raw Dataset + DatasetVersion"""
     import os
     from app.config import settings
@@ -35,8 +38,9 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
     if ext not in allowed:
         raise HTTPException(400, f"不支持的文件类型: .{ext} (允许: {settings.allowed_upload_extensions})")
 
-    content = await file.read()
-    if len(content) > settings.max_upload_mb * 1024 * 1024:
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    content = await file.read(max_bytes + 1)
+    if len(content) > max_bytes:
         raise HTTPException(413, f"文件超过大小限制 {settings.max_upload_mb}MB")
     # 推断 kind
     if ext in ("csv", "xlsx", "xls"):
@@ -47,7 +51,7 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
         kind = "unstructured"
 
     svc = DatasetService(db)
-    ds = svc.create_dataset(name=name, kind=kind)
+    ds = svc.create_dataset(name=name, kind=kind, created_by=current_user.id)
     # 估算行数
     rowcount = None
     if ext == "csv":
@@ -59,11 +63,16 @@ async def upload_dataset(file: UploadFile = File(...), db: Session = Depends(get
     return {"data": {"id": ds.id, "name": ds.name, "kind": ds.kind, "dataset_type": "raw_dataset", "schema_type": "tabular"}}
 
 @router.get("", response_model=list[DatasetResponse])
-def list_datasets(kind: str | None = None, db: Session = Depends(get_db)):
-    svc = DatasetService(db)
-    return svc.list_datasets(kind=kind)
+def list_datasets(kind: str | None = None, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user)):
+    query = db.query(Dataset)
+    if current_user.role != "admin":
+        query = query.filter(Dataset.created_by == current_user.id)
+    if kind:
+        query = query.filter(Dataset.kind == kind)
+    return query.all()
 
-@router.get("/{dataset_id}", response_model=DatasetResponse)
+@router.get("/{dataset_id}", response_model=DatasetResponse, dependencies=[Depends(require_dataset_access)])
 def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
     svc = DatasetService(db)
     ds = svc.get_dataset(dataset_id)
@@ -71,19 +80,19 @@ def get_dataset(dataset_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Dataset not found")
     return ds
 
-@router.get("/{dataset_id}/versions")
+@router.get("/{dataset_id}/versions", dependencies=[Depends(require_dataset_access)])
 def list_versions(dataset_id: str, db: Session = Depends(get_db)):
     svc = DatasetService(db)
     versions = svc.list_versions(dataset_id)
     return [{"id": v.id, "version_no": v.version_no, "rowcount": v.rowcount, "storage_uri": v.storage_uri} for v in versions]
 
-@router.get("/{dataset_id}/versions/{version_no}/preview")
+@router.get("/{dataset_id}/versions/{version_no}/preview", dependencies=[Depends(require_dataset_access)])
 def preview_data(dataset_id: str, version_no: int, limit: int = 100, db: Session = Depends(get_db)):
     svc = DatasetService(db)
     return svc.preview(dataset_id, version_no, limit)
 
 
-@router.get("/{dataset_id}/schema")
+@router.get("/{dataset_id}/schema", dependencies=[Depends(require_dataset_access)])
 def get_schema(dataset_id: str, db: Session = Depends(get_db)):
     """返回数据集的 schema（列名、类型、样本值）"""
     svc = DatasetService(db)
@@ -133,7 +142,7 @@ def get_schema(dataset_id: str, db: Session = Depends(get_db)):
     return {"dataset_id": dataset_id, "columns": columns}
 
 
-@router.get("/{dataset_id}/stats")
+@router.get("/{dataset_id}/stats", dependencies=[Depends(require_dataset_access)])
 def get_stats(dataset_id: str, db: Session = Depends(get_db)):
     """返回数据集统计信息"""
     svc = DatasetService(db)

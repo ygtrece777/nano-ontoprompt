@@ -6,7 +6,7 @@ import { ontologyApi } from '@/api/ontologies'
 import { apiClientV2 } from '@/api/client'
 import pipelinesApi, { type Pipeline } from '@/api/v2/pipelines'
 import curatedApi from '@/api/v2/curated'
-import { DOMAINS } from '@/types/ontology'
+import { DOMAINS, DOMAIN_PRESETS } from '@/types/ontology'
 import {
   Zap, GitBranch, ArrowLeft, ArrowRight, Loader2,
   CheckSquare, Square, CheckCircle, XCircle,
@@ -334,6 +334,13 @@ export default function OntologyCreateWizard() {
             {DOMAINS.map(d => <option key={d}>{d}</option>)}
           </select>
         </div>
+        {DOMAIN_PRESETS[domain] && (
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+            <p className="font-medium">领域模板：{DOMAIN_PRESETS[domain].description}</p>
+            <p className="mt-1"><span className="font-medium">实体：</span>{DOMAIN_PRESETS[domain].entities.join('、')}</p>
+            <p className="mt-1"><span className="font-medium">关系：</span>{DOMAIN_PRESETS[domain].relations.join('、')}</p>
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">描述（可选）</label>
           <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="简要描述本体用途"
