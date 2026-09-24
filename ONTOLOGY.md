@@ -92,7 +92,7 @@
 
 ## 2. 五个核心概念
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
 │   Object ──Link──► Object        Function  ─────────────►  │
@@ -143,7 +143,7 @@ Function 执行成功后的副作用通过事件总线解耦，不直接调用�
 
 列出业务里所有需要被 AI 操作的实体，给每个实体一个 PascalCase 的类型名。
 
-```
+```text
 常见错误：Object 类型定义太细或太粗
 - 太细：把 OrderItem 单独建 Object，但 AI 从不单独操作它 → 不必要
 - 太粗：把 User 和 Customer 合并，但它们在 AI 操作中有不同权限 → 后期拆分很痛
@@ -155,7 +155,7 @@ Function 执行成功后的副作用通过事件总线解耦，不直接调用�
 
 Function 是「用户意图」的最小完整单元，不是 API endpoint 的简单映射。
 
-```
+```text
 错误示例：
   createOrder + addOrderItem + confirmOrder → 三个 Function
   
@@ -167,7 +167,7 @@ Function 是「用户意图」的最小完整单元，不是 API endpoint 的简
 
 ### 决策 3：ConfirmLevel 如何划分？
 
-```
+```text
 AutoExecute     — AI 直接执行，无需确认
                   适用：读操作、可撤销的轻量写（如创建草稿）
 
@@ -184,7 +184,7 @@ ExplicitConfirm — 需明确授权
 
 在健康类场景中，Observation Function 的 AutoExecute 有一个前提：用户已对该类数据的采集明确 consent。「静默写入，用户无感知」成立的条件是「用户已知晓并同意」，而不是「界面上没有弹窗」。
 
-```
+```text
 数据类型                  Consent 要求               Observation Function 可用？
 ──────────────────────    ──────────────────────     ──────────────────────────
 症状 / 情绪提及           单独 consent（敏感数据）    consent 签署后 ✓
@@ -205,7 +205,7 @@ ExplicitConfirm — 需明确授权
 
 所有 Object 类型共用一张表，用 `ref.type` 区分。**这是投影缓存，不是权威数据源。**
 
-```
+```json
 {
   _id:         ObjectId          // cursor 分页必须有
   ref: {
@@ -229,7 +229,7 @@ ExplicitConfirm — 需明确授权
 
 ### `graph_edges`（Link Store）
 
-```
+```json
 {
   _id:          ObjectId         // cursor 分页必须有
   from_id:      string
@@ -250,7 +250,7 @@ ExplicitConfirm — 需明确授权
 
 ### `function_runs`（审计表，也叫 `action_runs`）
 
-```
+```json
 {
   actor_id:    string
   function:    string            // canonical function name
@@ -264,7 +264,7 @@ ExplicitConfirm — 需明确授权
 
 ### `ontology_function_configs`（Ontology Manager 配置表）
 
-```
+```json
 {
   name:          string          // 必须与代码常量一致
   object_type:   string
@@ -288,7 +288,7 @@ Output: {"order": ObjectRef{Type: "Order", ID: "ord_123"}}
 
 // ✗ 裸 ID，调用方不知道类型
 Output: {"order_id": "ord_123"}
-```
+```text
 
 ### Resolver：联邦读路径
 
@@ -298,7 +298,7 @@ Resolver 聚合多个数据源，对上层屏蔽读路径复杂性：
 Resolver.Get(ObjectRef{Type: "Order", ID: "ord_123"})
   ├── 查 Object Store（cache hit → 直接返回）
   └── miss → 查权威业务表 → 写回 Object Store → 返回
-```
+```text
 
 **Resolver 不是 Object Store 的 CRUD 层**，它是联邦读入口。权威写入走 Function，不走 Resolver。
 
@@ -308,7 +308,7 @@ Resolver.Get(ObjectRef{Type: "Order", ID: "ord_123"})
 权威数据        Object Store（投影）     Resolver
 orders 表  ──►  ontology_objects    ◄──  Resolver.Get("Order")
 users 表   ──►  ontology_objects    ◄──  Resolver.Get("Person")
-```
+```text
 
 写路径：Function 执行 → 写权威表 → 写 Object Store（同步）  
 读路径：Resolver.Get → 先查 Object Store → miss 时查权威表并回填
@@ -321,8 +321,8 @@ users 表   ──►  ontology_objects    ◄──  Resolver.Get("Person")
 
 这是整个架构最重要的分离原则：
 
-| | 定义（元数据） | 实现（执行逻辑） |
-|---|---|---|
+|  | 定义（元数据） | 实现（执行逻辑） |
+| --- | --- | --- |
 | **内容** | name、description、params、confirmLevel | 具体的业务代码 |
 | **维护方** | Ontology Manager（非技术人员可操作） | 开发者写代码 |
 | **变更** | 不用发版 | 必须发版 |
@@ -370,7 +370,7 @@ LLM tool name 中 `.` 替换为 `__`（避免特殊字符）：`person__placeOrd
 
 每个 Function 的 runner 内部应遵循固定顺序：
 
-```
+```text
 1. 写权威数据（业务表）
 2. PutObject()  → Object Store 投影
 3. writeLinks() → Graph 边
@@ -386,7 +386,7 @@ LLM tool name 中 `.` 替换为 `__`（避免特殊字符）：`person__placeOrd
 var functionAliases = map[string]string{
     "create_order": "person.placeOrder",  // 旧名 → 新名
 }
-```
+```text
 
 `CanonicalFunctionName("create_order")` → `"person.placeOrder"` 自动解析。
 
@@ -408,8 +408,8 @@ inviteMeeting(meetingID, NotifyIM: true)  // 统一由邀请事件推通知
 
 除了用户主动触发的 Action Function，还有一种由 **LLM 从对话内容中静默识别并写入**的 Function，称为 Observation Function。
 
-| | Action Function | Observation Function |
-|---|---|---|
+|  | Action Function | Observation Function |
+| --- | --- | --- |
 | **触发方** | 用户意图（「帮我创建会议」） | LLM 识别（「我最近睡不好」→ 记录症状） |
 | **用户感知** | 有确认卡片或明确反馈 | 静默，不打断对话 |
 | **ConfirmLevel** | 按业务需要设定 | 始终 `AutoExecute` |
@@ -423,7 +423,7 @@ Observation Function 的写路径和普通 Function 完全相同（写 Object St
 
 ### ConfirmLevel 枚举
 
-```
+```text
 AutoExecute     = 0   直接执行
                        适用：对话提取（Observation Function）、读操作、低风险轻量写
                        健康场景前提：用户已对该类数据采集明确 consent（见决策 4）
@@ -443,7 +443,7 @@ ClinicalReview  = 3   写入待审核队列，需持证临床人员 sign-off 后
 
 ### 执行流
 
-```
+```go
 Executor.Execute(Input)
     │
     ├── AutoExecute ──────────────────────► Validate → runFunction → Audit(executed)
@@ -470,7 +470,7 @@ Executor.Execute(Input)
 
 校验分两层，职责严格分离：
 
-```
+```text
 validateParams()   — 参数完整性（必填项、格式）
 authorizeFunction() — 权限（actor 是否有权操作这个 Object）
 ```
@@ -485,7 +485,7 @@ authorizeFunction() — 权限（actor 是否有权操作这个 Object）
 case "order.cancel":
     orderID := parseStringParam(params["order_id"])
     return fmt.Sprintf("取消订单 %s", orderID)
-```
+```text
 
 这是用户在确认卡片上看到的内容，直接影响用户体验。
 
@@ -505,7 +505,7 @@ case "order.cancel":
 
 不必建边：
   Order --HAS_ITEM--> OrderItem  AI 不会基于这个做推理
-```
+```text
 
 ### 权重设计
 
@@ -518,7 +518,7 @@ delta 参考：
   共同参与会议：+0.10
   加入同一个群：+0.01（对每对成员）
   创建实体：+1.0
-```
+```text
 
 ### 何时写边
 
@@ -529,7 +529,7 @@ delta 参考：
 通过 Webhook 写（依赖外部系统回调）：
   消息发送成功 → AfterSendSingleMsg webhook → RecordMessageExchanged
   用户加入群组 → AfterJoinGroup webhook → RecordGroupJoin
-```
+```text
 
 不要在事件订阅者里写边——订阅者负责「发出操作」，边在外部系统确认操作完成后才写（webhook），避免「消息还在队列里就写了 KNOWS 边」的问题。
 
@@ -561,7 +561,7 @@ type OrderPlacedPayload struct {
     Amount  float64
     NotifyIM bool    // 是否推 IM 通知（composite 路径控制双推问题用）
 }
-```
+```text
 
 `NotifyIM bool` 是控制 Composite Function 避免双推的关键字段。
 
@@ -574,7 +574,7 @@ MeetingCreated → 推 IM 会议卡片
 OrderPlaced    → 推支付通知
 ActionConfirmRequested → 推确认卡片
 TextMessageRequested   → 调 IM API 发消息
-```
+```text
 
 ---
 
@@ -592,7 +592,7 @@ GET /ontology/v1/objects?type=Order&limit=20&cursor=
 GET /ontology/v1/objects/:type/:id/links
 GET /ontology/v1/functions
 GET /ontology/v1/function-runs?status=pending
-```
+```text
 现有数据接口（ListObjects、ListEdges、LLMTools）都已就绪，只需加路由层。
 
 **层次 3：完整 UI（1-2 周）**  
@@ -632,7 +632,7 @@ Week 4+：完善
   ├── alias 兼容层
   ├── 测试覆盖
   └── Ontology Manager API（按需）
-```
+```text
 
 **不要等所有 Function 都想清楚再开始**。先做 2 个最核心的，把写路径跑通，再扩展。
 
@@ -659,7 +659,7 @@ func (f *fakeEdges) Upsert(_ context.Context, from, to, rel string, _ float64) e
 ### 必测场景
 
 | 场景 | 要点 |
-|---|---|
+| --- | --- |
 | nil guard | Graph/Store 为 nil 时不 panic，返回空结果 |
 | 参数透传 | from/to/rel 正确传到底层 |
 | 过滤逻辑 | 各 Filter 字段独立生效 |
@@ -686,7 +686,7 @@ case "create_order":
 
 // ✓ 常量跟着重命名走
 case FuncPersonPlaceOrder:
-```
+```text
 
 重命名 Function 时，全局 grep 字符串字面量，不要只改常量定义。
 
@@ -712,7 +712,7 @@ createOrder()  →  addItem()  →  addItem()  →  submitOrder()
 
 // ✓ 一个意图一个 Function
 person.placeOrder(items, address)
-```
+```text
 
 ### 陷阱 4：在事件订阅者里写 Graph 边
 
@@ -737,7 +737,7 @@ Output: {"order_id": "ord_123"}
 
 // ✓ 返回 ObjectRef，LLM 可以作为参数直接传入后续 Function
 Output: {"order": ObjectRef{Type: "Order", ID: "ord_123"}}
-```
+```text
 
 ### 陷阱 6：Record 结构体没有 `_id` 字段
 
@@ -756,7 +756,7 @@ type Record struct {
 ## 14. 与传统架构的对比
 
 | 问题 | 传统做法 | Foundry Ontology |
-|---|---|---|
+| --- | --- | --- |
 | AI 能做什么 | 散落在各 API handler 里 | 统一在 Function Registry，LLMTools() 导出 |
 | 参数校验 | 每个接口各自写 | validateFunction 集中管理 |
 | 权限控制 | 散点 if-else | authorizeFunction 统一策略 |
@@ -781,7 +781,7 @@ type Record struct {
 
 双图分离（clinical_kb / patient_graph）指的是**存储与 ACL 分离**，不是 Ontology 概念分裂。在 Foundry 语义下，这是一个 Ontology、两类 Object：
 
-```
+```text
 ┌─ Reference Objects（clinical_kb，稳定，只读）──────────────────┐
 │  ClinicalDisorder, ClinicalSymptom, DiagnosticCriterion, Scale │
 │  ClinicalRule  { formula, triggers_function }                  │
@@ -810,7 +810,7 @@ type Record struct {
 Foundry 的动态循环是 **Operational Object 状态变化 → Function 执行 → Event Bus**：
 
 | Foundry 预期 | 临床场景对应 |
-|---|---|
+| --- | --- |
 | Product 目录（稳定） | ClinicalDisorder、ClinicalSymptom（clinical_kb） |
 | Order（动态，每笔在变） | Person、SymptomReport（patient_graph） |
 | `order.ship()` 绑在 Order 上 | `person.flagCrisisSignal()` 绑在 Person 上 |
@@ -823,16 +823,16 @@ clinical_kb 稳定不是缺陷——Reference Layer 本来就不参与「变」�
 nano-ontoprompt 从文档提取的两类产物，在 Ontology 里应区分落位：
 
 | 提取产物 | 本质 | Ontology 落位 | 是否可执行 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `logic_rules` | 声明式临床约束（IF…THEN…） | `ClinicalRule`，绑定 Reference Object | 否，只供 consult |
 | `actions` | 指南描述的响应（「触发紧急随访」） | Function **元数据**（description、触发条件） | 否，runner 在代码注册 |
-| Foundry Function |  imperative 操作（写图、告警、审计） | 绑 `Person` / `Session`，代码注册 runner | 是 |
+| Foundry Function | imperative 操作（写图、告警、审计） | 绑 `Person` / `Session`，代码注册 runner | 是 |
 
 提取阶段的价值：**自动生成 ClinicalRule 草稿 + Function 元数据**，不是把 `function_code` 绑在 Disorder 实体上当 Foundry Action 用。
 
 #### Event Bus 驱动的规则评估（Foundry 标准模式）
 
-```
+```text
 用户说话
   → person.recordSymptom()              // Person 上的 Observation Function
   → 写 SymptomReport + REPORTS 边       // patient_graph 状态变化
@@ -850,7 +850,7 @@ nano-ontoprompt 从文档提取的两类产物，在 Ontology 里应区分落位
 
 #### 与企业场景的类比
 
-```
+```text
 供应链：
   Product（Reference，稳定） + 补货规则（Policy）
   PurchaseOrder（Operational，动态） + placeOrder Function
@@ -868,7 +868,7 @@ nano-ontoprompt 从文档提取的两类产物，在 Ontology 里应区分落位
 
 #### 心智模型
 
-```
+```text
 用户说话（自由文本）
         │
         ▼
@@ -896,7 +896,7 @@ nano-ontoprompt 从文档提取的两类产物，在 Ontology 里应区分落位
 
 从 140+ 医学文档 + SNOMED-CT 批量提取，存 TuGraph：
 
-```
+```text
 Disorder「抑郁症」
   --HAS_SYMPTOM--> snomed:366979004 情绪低落  { prevalence: 0.92, required: true }
   --HAS_SYMPTOM--> snomed:193462001 失眠      { prevalence: 0.78 }
@@ -909,7 +909,7 @@ Disorder「抑郁症」
 
 用户：「最近心情很差，晚上也睡不好。」
 
-```
+```json
 ① LLM 调用 person.recordSymptom（用户无感知）
 ② 规范化（查 clinical_kb Symptom 词表，非整图遍历）：
    「心情很差」→ snomed:366979004（情绪低落）
@@ -926,7 +926,7 @@ Disorder「抑郁症」
 
 每轮结束后读 patient_graph → `getAssessmentFocus()`：
 
-```
+```text
 emerging_clusters: ["depression_possible"]
 coverage_gaps:      ["duration"]   ← PHQ-9 关键项缺失
 next_focus:         "depression_possible"
@@ -938,7 +938,7 @@ next_focus:         "depression_possible"
 
 用户：「差不多有一个月了，对什么都提不起兴趣。」
 
-```
+```text
 更新 情绪低落边：last_reported_at = 今天, reported_count = 2, duration ≥ 4 周 ✓
 新增 兴趣减退：snomed:247441003
 Coverage：PHQ-9 item_2 ✓，duration gap 关闭 ✓
@@ -951,7 +951,7 @@ Coverage：PHQ-9 item_2 ✓，duration gap 关闭 ✓
 调用 `person.generateScreeningReport()`（只读，不写图）：
 
 | 步骤 | 查哪张图 | 做什么 |
-|---|---|---|
+| --- | --- | --- |
 | 症状持续性 | patient_graph | `REPORTS` 边，`last_reported_at - first_reported_at ≥ 2周` |
 | PHQ-9 评分 | patient_graph | 已覆盖 Dimension → 映射条目分值 |
 | 时序关联 | patient_graph | `LifeEvent --PRECEDED--> Symptom` |
@@ -972,7 +972,7 @@ LLM 识别临床信息 → Observation Function 写入。clinical_kb 仅提供 S
 
 **用法 3：跨图推理（方向判断 + 出报告）**
 
-```
+```text
 patient_graph 取出 canonical_ids
         +
 clinical_kb  查 Disorder 匹配、诊断标准、量表推荐、共现模式
@@ -983,7 +983,7 @@ clinical_kb  查 Disorder 匹配、诊断标准、量表推荐、共现模式
 #### 分工速查
 
 | 问题 | 查哪张图 |
-|---|---|
+| --- | --- |
 | 用户说了什么症状？ | patient_graph |
 | 症状持续多久？ | patient_graph（边的时间戳） |
 | PHQ-9 哪些题还没覆盖？ | patient_graph（Dimension 边） |
@@ -1007,13 +1007,13 @@ clinical_kb  查 Disorder 匹配、诊断标准、量表推荐、共现模式
 Operational 层（patient_graph）Object。**注意：`SymptomReport` 是用户的一次症状报告实例，不是 clinical_kb 里的 `ClinicalSymptom`。**
 
 | Object | 说明 | 关键属性 |
-|---|---|---|
+| --- | --- | --- |
 | `Person` | 用户，跨会话持久存在 | user_id, created_at |
 | `SymptomReport` | 用户报告的症状实例 | canonical_id, raw_text, severity, phq9_item |
 | `LifeEvent` | 生活事件 | name, event_type（loss/trauma/transition）, occurred_at |
-| `Behavior` | 行为模式 | name, behavior_type（avoidance/substance/sleep）|
+| `Behavior` | 行为模式 | name, behavior_type（avoidance/substance/sleep） |
 | `Session` | 一次对话会话 | started_at, ended_at, summary |
-| `RiskIndicator` | 风险指标 | level（low/medium/high/urgent）, basis（推理依据摘要）|
+| `RiskIndicator` | 风险指标 | level（low/medium/high/urgent）, basis（推理依据摘要） |
 | `Dimension` | 量表评估维度 | scale（PHQ-9/GAD-7/PCL-5）, item_id, item_name |
 
 `SymptomReport.canonical_id` 用于建立 `REFERS_TO` 边，指向 clinical_kb 的 `ClinicalSymptom`。时间戳（`first_reported_at` / `last_reported_at`）放在 `Person --REPORTS--> SymptomReport` 边上。
@@ -1024,7 +1024,7 @@ Operational 层（patient_graph）Object。**注意：`SymptomReport` 是用户�
 
 **关系边**（记录客观关系，跨会话稳定）：
 
-```
+```text
 Person --REPORTS-->           SymptomReport   用户报告了某症状（边上有时间戳、severity）
 SymptomReport --REFERS_TO-->  ClinicalSymptom  指向 clinical_kb 规范症状（跨层 Link）
 Person --EXPERIENCED-->       LifeEvent       经历了某生活事件
@@ -1036,7 +1036,7 @@ SymptomReport --CO_OCCURS_WITH--> SymptomReport  两个症状报告共现
 
 **会话边**（记录单次会话的观察，粒度更细）：
 
-```
+```text
 Session --CAPTURED-->  SymptomReport  本次会话识别到的症状
 Session --CAPTURED-->  LifeEvent      本次会话识别到的生活事件
 Session --ASSESSED-->  Dimension      本次会话覆盖了哪些量表维度
@@ -1045,7 +1045,7 @@ Session --ASSESSED-->  Dimension      本次会话覆盖了哪些量表维度
 **边上的关键字段**（与通用架构的 weight 不同，需要时间维度）：
 
 | 字段 | 类型 | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | `first_reported_at` | timestamp | 首次报告时间 |
 | `last_reported_at` | timestamp | 最近一次报告时间 |
 | `reported_count` | int | 跨会话报告次数 |
@@ -1058,7 +1058,7 @@ Session --ASSESSED-->  Dimension      本次会话覆盖了哪些量表维度
 ### Observation Function 设计
 
 | Function | ConfirmLevel | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | `person.recordSymptom()` | AutoExecute（consent 范围内） | 症状写入，静默 |
 | `person.recordLifeEvent()` | AutoExecute（consent 范围内） | 生活事件写入，静默 |
 | `person.recordBehavior()` | AutoExecute（consent 范围内） | 行为模式写入，静默 |
@@ -1073,7 +1073,7 @@ Session --ASSESSED-->  Dimension      本次会话覆盖了哪些量表维度
 #### FHIR 资源对照（对接 EHR 时参考）
 
 | Foundry Object | FHIR 资源 | 关键字段对应 |
-|---|---|---|
+| --- | --- | --- |
 | `Person` | `Patient` | user_id → Patient.identifier |
 | `SymptomReport` | `Observation` | canonical_id → Observation.code（SNOMED 编码） |
 | `Session` | `Encounter` | started_at → Encounter.period.start |
@@ -1106,8 +1106,8 @@ LLM 在正常回复用户的同时，并行调用这些函数写图。
 
 **两种方式对比**：
 
-| | 实时提取 | 批量提取 |
-|---|---|---|
+|  | 实时提取 | 批量提取 |
+| --- | --- | --- |
 | 延迟 | 无延迟，对话中即写入 | 会话结束后写入 |
 | 上下文 | 只有当前轮对话 | 完整会话上下文，准确性更高 |
 | 适用 | 实时反馈场景 | 准确性要求高的临床场景 |
@@ -1121,7 +1121,7 @@ LLM 从对话中提取的是自由文本（「心情很差」「脑子转不动�
 
 **SNOMED-CT**（全球最全临床术语库，35万+ 概念）已经包含大量症状，每个概念有唯一数字 ID：
 
-```
+```text
 366979004 → 情绪低落（Depressed mood）
 193462001 → 失眠（Insomnia）
 247592009 → 注意力难集中（Poor concentration）
@@ -1130,15 +1130,15 @@ LLM 从对话中提取的是自由文本（「心情很差」「脑子转不动�
 
 Symptom 节点直接从 SNOMED-CT 导入（Ontology 类型名 `ClinicalSymptom`）：
 
-```
+```text
 ClinicalSymptom { canonical_id: "snomed:366979004", name: "情绪低落" }
 ClinicalSymptom { canonical_id: "snomed:193462001", name: "失眠" }
 ```
 
 **SNOMED-CT 和文档各自提供什么：**
 
-| | SNOMED-CT | 140+ 文档 |
-|---|---|---|
+|  | SNOMED-CT | 140+ 文档 |
+| --- | --- | --- |
 | 症状词表（canonical_id） | ✓ 直接导入 | 不需要重复提取 |
 | Disorder → Symptom 关系 | 部分有，不完整 | ✓ 需要提取 |
 | 各症状在该病中的 prevalence | ✗ 没有 | ✓ 需要提取 |
@@ -1151,7 +1151,7 @@ SNOMED-CT 解决「症状叫什么、ID 是什么」，文档解决「这个病�
 
 低置信度匹配失败是 Embedding 模型的语言理解问题，不应该用人工维护映射表来补。正确分工：**Embedding 负责缩小候选范围，LLM 负责临床推理判断**。
 
-```
+```text
 用户说「感觉脑子像生锈了」
 
 ① Embedding 召回 top-5 候选（内存索引，< 10ms）：
@@ -1175,7 +1175,7 @@ LLM 有临床语言理解能力，能处理口语化、比喻性、方言表达�
   "raw_text":     "感觉脑子像生锈了",
   "match_confidence": 0.91
 }
-```
+```text
 
 `raw_text` 保留原始表达用于溯源，不参与推理匹配。
 
@@ -1190,7 +1190,7 @@ clinical_kb 极少变动，服务启动时预加载所有 Symptom 节点到内�
 
 每轮对话提取时：
   自由文本 → Embedding 召回候选 → LLM 推理 → canonical_id
-```
+```text
 
 #### review 队列只拦截临床歧义
 
@@ -1201,7 +1201,7 @@ clinical_kb 极少变动，服务启动时预加载所有 Symptom 节点到内�
   → 抑郁情绪？存在主义表达？自杀意念？
   → LLM 无法仅凭文本判断 → 进 review 队列
   → 同时触发：追问上下文 / 危机检测旁路
-```
+```text
 
 人工审核做的是**临床判断**，不是文本到标签的映射维护。review 队列的量应该极少——只有连临床医生都需要更多信息才能判断的表达。
 
@@ -1211,7 +1211,7 @@ clinical_kb 极少变动，服务启动时预加载所有 Symptom 节点到内�
 
 ```
 person.generateScreeningReport()
-```
+```text
 
 内部查询逻辑示例：
 
@@ -1233,7 +1233,7 @@ person.generateScreeningReport()
 
 5. 输出结构化报告
    → {risk_level, symptom_clusters, possible_concerns, evidence_sessions}
-```
+```text
 
 ### 对话引导：如何有针对性地问问题
 
@@ -1253,7 +1253,7 @@ person.generateScreeningReport()
 第三层：定向深挖（只针对正筛方向）
   PHQ-9（抑郁）/ GAD-7（焦虑）/ PCL-5（PTSD）…
   → 只问与当前症状簇相关的维度
-```
+```text
 
 #### 图状态驱动路由
 
@@ -1269,7 +1269,7 @@ person.getAssessmentFocus()
     coverage_gaps:      ["duration", "severity"],  // 已知症状缺少关键维度
     next_focus:         "anxiety_signals"          // 建议下一步方向
   }
-```
+```text
 
 返回结果注入系统 prompt：
 
@@ -1281,7 +1281,7 @@ person.getAssessmentFocus()
 
 下一步：自然引导用户谈谈最近是否容易紧张或担心。
 不要提问卷，不要列清单，像普通对话一样探索。
-```
+```text
 
 #### 症状簇 → 方向映射
 
@@ -1293,7 +1293,7 @@ person.getAssessmentFocus()
 闪回 / 回避 / 创伤事件提及           → 激活 PCL-5（创伤）
 情绪高涨 + 睡眠减少 + 冲动（周期性） → 激活双相筛查
 多方向同时正筛                       → 优先风险最高，记录共病可能
-```
+```text
 
 #### Coverage Tracking
 
@@ -1305,7 +1305,7 @@ PHQ-9 覆盖状态：
   ✓ 兴趣减退（已从对话中提取）
   ✗ 睡眠问题（空缺 → 下一步补充）
   ✗ 疲乏、自我评价、注意力（空缺）
-```
+```text
 
 **已从对话自然提取到的维度不重复问**，只对空缺维度定向引导。
 
@@ -1319,7 +1319,7 @@ PHQ-9 覆盖状态：
 覆盖补充（温和直接）：
   「除了睡眠，你最近食欲和精力方面有变化吗？」
   → 用于评估必要维度（如持续时间、严重程度）尚未在对话中出现时
-```
+```text
 
 能从自然对话中提取的不主动问；对于临床必须的维度（如症状持续时长），在对话中未出现时温和地直接问。
 
@@ -1343,7 +1343,7 @@ PHQ-9 覆盖状态：
   在 LLM 系统 prompt 中始终注入危机检测指令（不依赖漏斗状态）：
   「如果对话中出现任何自伤或自杀相关信号，立即调用
    person.flagCrisisSignal，不要等待其他评估完成。」
-```
+```text
 
 PHQ-9 第9题（关于自杀/自伤的念头）也应作为独立规则，在任何会话中只要未覆盖就优先补充，不受漏斗三层顺序约束。
 
@@ -1370,7 +1370,7 @@ PHQ-9 第9题（关于自杀/自伤的念头）也应作为独立规则，在任
    记录每次 Observation Function 的输入（对话片段）和输出（写入的 Object/边）
    对照人工标注，持续评估提取准确率
    准确率 < 80% 时不开放自动路由
-```
+```text
 
 #### 盲区 3：多方向共病的优先级排序
 
@@ -1386,7 +1386,7 @@ PHQ-9 第9题（关于自杀/自伤的念头）也应作为独立规则，在任
 5. 抑郁（无自伤信号）             ← PHQ-9 正筛
 6. 焦虑障碍                      ← GAD-7 正筛
 7. 其他方向                      ← 按症状信号强度排序
-```
+```text
 
 **共病时的实现规则**：
 
@@ -1410,7 +1410,7 @@ type AssessmentFocus struct {
 ### 与企业协作场景的关键差异
 
 | 维度 | 企业协作（如会议邀请） | 精神健康筛查 |
-|---|---|---|
+| --- | --- | --- |
 | Function 触发 | 用户显式意图 | LLM 识别，用户无感知 |
 | 写入频率 | 低，一次会话几次 | 高，每轮对话可能多次 |
 | 边的核心属性 | weight（关系强度） | 时间戳 + 置信度 + 严重程度 |
@@ -1422,7 +1422,7 @@ type AssessmentFocus struct {
 
 **先做数据积累，再做推理**
 
-```
+```text
 阶段 1：打通单次对话提取链路
   - 定义 Symptom / LifeEvent Object 类型
   - 实现 person.recordSymptom / person.recordLifeEvent
@@ -1450,13 +1450,13 @@ Reference 层（`clinical_kb`）存储从医学文档中提取的**结构化医�
 #### Objects
 
 | Object | 说明 | 关键属性 |
-|---|---|---|
+| --- | --- | --- |
 | `ClinicalDisorder` | 疾病 / 障碍 | name, category, icd10_code, dsm5_code |
-| `ClinicalSymptom` | 症状（规范化） | canonical_id, name, category（情绪/躯体/认知/行为）|
+| `ClinicalSymptom` | 症状（规范化） | canonical_id, name, category（情绪/躯体/认知/行为） |
 | `DiagnosticCriterion` | 诊断标准条目 | standard（DSM-5/ICD-11）, criterion_text, time_requirement |
 | `ClinicalRule` | 临床规则（指南条文） | formula, description, triggers_function, confidence |
-| `RiskFactor` | 危险因素 | name, factor_type（biological/psychological/social）|
-| `Treatment` | 治疗方案 | name, treatment_type（medication/therapy/physical）|
+| `RiskFactor` | 危险因素 | name, factor_type（biological/psychological/social） |
+| `Treatment` | 治疗方案 | name, treatment_type（medication/therapy/physical） |
 | `Scale` | 评估量表 | name, full_name, item_count, score_range |
 
 `ClinicalSymptom.canonical_id` 是跨层桥梁——Operational 层 `SymptomReport` 通过 `REFERS_TO` 边引用它。`ClinicalRule.triggers_function` 指向 Operational 层 Person 上注册的 Function 名（如 `person.flagCrisisSignal`），规则本身不可执行。
@@ -1465,7 +1465,7 @@ Reference 层（`clinical_kb`）存储从医学文档中提取的**结构化医�
 
 **诊断相关：**
 
-```
+```text
 ClinicalDisorder --HAS_SYMPTOM-->       ClinicalSymptom     该病的典型症状
 ClinicalDisorder --DIAGNOSED_BY-->      DiagnosticCriterion 诊断标准条目
 ClinicalDisorder --COMORBID_WITH-->     ClinicalDisorder    常见共病（双向）
@@ -1476,14 +1476,14 @@ ClinicalRule     --APPLIES_TO-->         ClinicalDisorder    规则适用的疾�
 
 **病因与风险：**
 
-```
+```text
 RiskFactor --INCREASES_RISK-->  ClinicalDisorder    危险因素 → 疾病
 ClinicalDisorder --HAS_RISK_FACTOR--> RiskFactor    疾病 → 危险因素（反向查询用）
 ```
 
 **评估与治疗：**
 
-```
+```text
 ClinicalDisorder --ASSESSED_BY-->       Scale               推荐评估量表
 ClinicalDisorder --TREATED_BY-->        Treatment           推荐治疗方案
 Scale            --MEASURES-->           ClinicalDisorder    量表适用的疾病
@@ -1492,10 +1492,10 @@ Scale            --MEASURES-->           ClinicalDisorder    量表适用的疾�
 #### 边上的关键字段
 
 | 字段 | 类型 | 说明 |
-|---|---|---|
-| `prevalence` | float | 该症状 / 因素在此病中的出现率（初始来自文献，后由反哺更新）|
+| --- | --- | --- |
+| `prevalence` | float | 该症状 / 因素在此病中的出现率（初始来自文献，后由反哺更新） |
 | `required` | bool | 是否为必要诊断条件 |
-| `source_doc` | string | 来源文档文件名（溯源用）|
+| `source_doc` | string | 来源文档文件名（溯源用） |
 | `extraction_confidence` | float | LLM 提取置信度 |
 | `last_updated_at` | timestamp | 最近一次被反哺更新的时间 |
 
@@ -1503,7 +1503,7 @@ Scale            --MEASURES-->           ClinicalDisorder    量表适用的疾�
 
 两步构建，不混在一起：
 
-```
+```json
 Step 1：导入 SNOMED-CT 症状子集（一次性）
   从 SNOMED-CT 导出精神健康相关 Clinical Finding 概念
   → 批量写入 TuGraph clinical_kb 的 ClinicalSymptom 节点
@@ -1542,7 +1542,7 @@ Step 2：从 140+ 文档提取关系和元数据（每次文档更新时）
 nano-ontoprompt 从文档提取的四类产物，在 Foundry Ontology 中落位如下：
 
 | 提取 JSON 字段 | Ontology 落位 | 存储层 | 说明 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `entities` | Reference Object（ClinicalDisorder 等） | clinical_kb | 医学概念节点 |
 | `relations` | Reference Link（HAS_SYMPTOM 等） | clinical_kb | 概念间关系 |
 | `logic_rules` | **ClinicalRule** | clinical_kb | 指南条文，`--APPLIES_TO-->` 绑定 Reference Object |
@@ -1550,7 +1550,7 @@ nano-ontoprompt 从文档提取的四类产物，在 Foundry Ontology 中落位�
 
 #### logic_rules → ClinicalRule
 
-```
+```json
 提取：
   { "name_cn": "GAD诊断规则",
     "formula": "IF 焦虑症状持续 duration > 6个月 AND 无法控制 THEN 符合GAD",
@@ -1566,7 +1566,7 @@ nano-ontoprompt 从文档提取的四类产物，在 Foundry Ontology 中落位�
   ClinicalRule --APPLIES_TO--> ClinicalSymptom(焦虑)
 ```
 
-```
+```json
 提取：
   { "name_cn": "自杀危机干预规则",
     "formula": "IF 症状==自杀意念 OR 风险==高 THEN 立即干预",
@@ -1582,7 +1582,7 @@ nano-ontoprompt 从文档提取的四类产物，在 Foundry Ontology 中落位�
 
 #### actions → Function 元数据（绑 Person，不绑 Disorder）
 
-```
+```json
 提取：
   { "name_cn": "触发紧急随访",
     "execution_rule": "IF 检测到自杀风险 THEN 立即通知",
@@ -1605,7 +1605,7 @@ nano-ontoprompt 从文档提取的四类产物，在 Foundry Ontology 中落位�
 
 #### 运行时：谁驱动谁
 
-```
+```go
 SymptomReported（Event）
   → ClinicalRuleEvaluator（subscriber）
       读 Person 的 SymptomReports
@@ -1642,7 +1642,7 @@ SymptomReported（Event）
 
 引入图数据库后，**不替换 MongoDB，而是叠加**：
 
-```
+```text
 patient_graph 写入路径：
   应用 → MongoDB（ontology_objects + graph_edges）← Source of Truth
                    ↓ Change Stream 异步同步
@@ -1657,7 +1657,7 @@ patient_graph 读取路径：
 
 **clinical_kb 不适用此规则**：临床知识图从文档批量提取，TuGraph 本身就是它的 Source of Truth，无需在 MongoDB 中保留副本。两者各自的主存不同：
 
-```
+```text
 patient_graph：MongoDB 主存 → TuGraph 只读副本
 clinical_kb：  TuGraph 主存（直接写入，不经 MongoDB）
 ```
@@ -1665,7 +1665,7 @@ clinical_kb：  TuGraph 主存（直接写入，不经 MongoDB）
 不选择「图数据库作为 patient_graph 主存」的原因：图数据库的节点 properties 通常是强类型的，不适合 schema-free 的 Object 属性；而且 Object 节点的文档式查询（按属性过滤）仍需要 MongoDB，无法完全去掉。
 
 | 方案 | 适用阶段 | 运维复杂度 |
-|---|---|---|
+| --- | --- | --- |
 | 纯 MongoDB | 初期，< 百万级边，1-2 跳查询 | 低 |
 | MongoDB 主存 + 图数据库只读层 | 需要深度图查询或图算法时 | 中 |
 | 图数据库作为主存 | 不推荐（属性灵活性差） | 高 |
@@ -1676,7 +1676,7 @@ clinical_kb：  TuGraph 主存（直接写入，不经 MongoDB）
 
 两个图实例，各自 Source of Truth 不同，但 **Object 类型、Link 类型、Function Registry 在同一套 Ontology 定义中**：
 
-```
+```text
 Ontology 定义（统一）
   ├── Reference ObjectTypes：ClinicalDisorder, ClinicalSymptom, ClinicalRule …
   ├── Operational ObjectTypes：Person, SymptomReport, Session …
@@ -1692,7 +1692,7 @@ Ontology 定义（统一）
 
 两个图，各自有各自的 Source of Truth，存储层不共享：
 
-```
+```text
 clinical_kb（TuGraph 实例）
   Source of Truth：TuGraph 本身
   来源：140+ 文档批量提取，极少更新
@@ -1708,8 +1708,8 @@ patient_graph（TuGraph 实例）
 
 分离的三个原因：
 
-| | clinical_kb | patient_graph |
-|---|---|---|
+|  | clinical_kb | patient_graph |
+| --- | --- | --- |
 | 数据性质 | 医学参考知识，类似教科书 | 用户 PII，高度敏感 |
 | 更新频率 | 极低，文档更新时才重建 | 高，每轮对话写入 |
 | Source of Truth | TuGraph | MongoDB |
@@ -1718,7 +1718,7 @@ patient_graph（TuGraph 实例）
 
 两图存储分离，跨层关联是 Ontology 内的 `SymptomReport --REFERS_TO--> ClinicalSymptom`，评估在 Event Bus 层完成：
 
-```
+```text
 1. 查 patient_graph（Operational）：
    user_123 的 SymptomReports → canonical_ids
 
@@ -1731,7 +1731,7 @@ patient_graph（TuGraph 实例）
 
 staging 反哺时也直接写 TuGraph clinical_kb，不经过 MongoDB：
 
-```
+```text
 clinical_staging（MongoDB）→ 审核通过 → 直接更新 TuGraph clinical_kb
 ```
 
@@ -1739,7 +1739,7 @@ clinical_staging（MongoDB）→ 审核通过 → 直接更新 TuGraph clinical_
 
 核心原则：**患者个体数据永远不直接写入 clinical_kb，中间必须经过匿名聚合和人工审核。**
 
-```
+```text
 ┌─────────────────┐   定期聚合 job    ┌──────────────────┐
 │  patient_graph  │ ────────────────▶ │ clinical_staging │
 │  (原始个体数据)  │   匿名统计结果     │  (待审核发现)     │
@@ -1760,7 +1760,7 @@ clinical_staging（MongoDB）→ 审核通过 → 直接更新 TuGraph clinical_
 
 `clinical_kb` 中 `Disorder --HAS_SYMPTOM--> Symptom` 的 `prevalence` 初始值来自文献。真实数据可以将其收敛到你的用户群真实分布：
 
-```
+```text
 聚合查询（patient_graph）：
   被识别为 depression_possible 的用户中，同时报告 insomnia 的比例？
 
@@ -1771,7 +1771,7 @@ clinical_staging（MongoDB）→ 审核通过 → 直接更新 TuGraph clinical_
 
 **② 发现文献中没有的症状共现模式**
 
-```
+```text
 挖掘 patient_graph：
   symptom:social_withdrawal 与 symptom:appetite_change 共现率 81%
   但 clinical_kb 中不存在这条 CO_OCCURS_WITH 边
@@ -1782,7 +1782,7 @@ clinical_staging（MongoDB）→ 审核通过 → 直接更新 TuGraph clinical_
 
 **③ 诊断准确率反馈**
 
-```
+```json
 系统推荐：user_123 可能是 GAD（置信度 0.78）
 临床医生确认：正确
 
@@ -1803,7 +1803,7 @@ clinical_staging（MongoDB）→ 审核通过 → 直接更新 TuGraph clinical_
 
 #### staging 层的数据结构
 
-```
+```json
 clinical_staging 集合（MongoDB）：
 {
   finding_type:  "co_occurrence" | "prevalence_update" | "diagnostic_feedback",
@@ -1829,7 +1829,7 @@ clinical_staging 集合（MongoDB）：
 
 #### 产品定位（上线前必须明确）
 
-```
+```text
 ✓ 定位：精神健康筛查辅助 / 智能分诊引导
 ✗ 禁止：输出「你得了 XX 病」类诊断结论
 
@@ -1844,7 +1844,7 @@ clinical_staging 集合（MongoDB）：
 #### 一、架构与工程（P0）
 
 | # | 检查项 | 过关标准 |
-|---|---|---|
+| --- | --- | --- |
 | 1 | patient_graph 最小闭环 | `recordSymptom` → MongoDB 写入 → `getAssessmentFocus` 可读 |
 | 2 | 跨会话 Upsert | 同一 Person 多次对话，症状边正确合并（`reported_count`、时间戳更新） |
 | 3 | canonical_id 规范化 | 口语 → SNOMED canonical_id，保留 `raw_text` 溯源 |
@@ -1858,7 +1858,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 #### 二、临床有效性（P0，最大风险）
 
 | # | 检查项 | 过关标准 |
-|---|---|---|
+| --- | --- | --- |
 | 8 | 对话提取准确率 | 人工标注 ≥ 100 例对话，Symptom 提取 F1 ≥ 0.80 才开放自动路由 |
 | 9 | 规范化准确率 | 口语 → canonical_id 映射，临床专家抽检 ≥ 50 例，准确率 ≥ 0.90 |
 | 10 | clinical_kb 临床审核 | 每条 Disorder–Symptom 关系经持证精神科医师 sign-off |
@@ -1871,7 +1871,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 #### 三、安全与危机响应（P0，一票否决）
 
 | # | 检查项 | 过关标准 |
-|---|---|---|
+| --- | --- | --- |
 | 14 | 危机独立旁路 | `flagCrisisSignal()` 不依赖漏斗路由，每轮常驻检测 |
 | 15 | 规则引擎兜底 | LLM 不可用或超时时，关键词规则层仍可触发危机告警 |
 | 16 | 人工 escalation SLA | urgent 级别 → 5 分钟内人工坐席响应或转接危机热线 |
@@ -1884,7 +1884,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 #### 四、合规与隐私（P0）
 
 | # | 检查项 | 过关标准 |
-|---|---|---|
+| --- | --- | --- |
 | 20 | 知情同意（Consent） | 用户明确 consent：数据类型、保留期、AI 推断声明、非诊断免责 |
 | 20a | Consent 与 AutoExecute 挂钩 | Observation Function 上线前确认 consent 覆盖该数据类型（见决策 4） |
 | 20b | Consent 版本管理 | 已 consent 版本有记录；consent 内容变更需重新获取同意 |
@@ -1900,7 +1900,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 #### 五、运维与可靠性（P1）
 
 | # | 检查项 | 过关标准 |
-|---|---|---|
+| --- | --- | --- |
 | 27 | clinical_kb 热更新 | 知识图更新不影响正在进行的对话会话 |
 | 28 | Symptom 词表内存索引 | 服务启动预加载，规范化延迟 < 50ms（P99） |
 | 29 | 推理延迟 | `getAssessmentFocus()` P99 < 200ms |
@@ -1911,7 +1911,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 #### 六、反哺回路（P2，上线后迭代）
 
 | # | 检查项 | 过关标准 |
-|---|---|---|
+| --- | --- | --- |
 | 33 | staging 质量门控 | 样本量 < 50 的发现不进入 staging |
 | 34 | 反哺审核流程 | 临床医生 approve/reject，reject 有原因记录 |
 | 35 | prevalence 更新可追溯 | 每次 clinical_kb 边权重变更关联 staging 记录 |
@@ -1921,7 +1921,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 #### 上线决策矩阵
 
 | 维度 | 设计文档现状 | 生产要求 | 优先级 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 架构分层 | ✅ 完整 | 按文档实现 | P0 |
 | 临床知识质量 | ⚠️ 依赖 LLM 提取 | 专家 sign-off + 版本管理 | P0 |
 | 对话提取准确率 | ⚠️ 最大未知数 | F1 ≥ 0.80 + 持续监控 | P0 |
@@ -1933,7 +1933,7 @@ TuGraph 对 patient_graph **不是 P0**——MongoDB 1-2 跳查询足够，图�
 
 #### 推荐实施顺序
 
-```
+```text
 Phase 0（4-6 周）：最小闭环
   recordSymptom / recordLifeEvent → MongoDB
   getAssessmentFocus → 驱动对话
@@ -1963,15 +1963,15 @@ Phase 3（持续）：规模化 + 反哺
 
 #### 构建期 vs 运行期
 
-| | 构建期（nano-ontoprompt） | 运行期（筛查对话系统） |
-|---|---|---|
+|  | 构建期（nano-ontoprompt） | 运行期（筛查对话系统） |
+| --- | --- | --- |
 | **时机** | 离线，文档更新时 | 在线，每轮对话 |
 | **输入** | 140+ 医学指南 PDF/DOCX | 用户自然语言 |
 | **输出** | clinical_kb（概念、关系、规则） | patient_graph（SymptomReport、Session） |
 | **Foundry** | 不需要 Function / Event Bus | Person Function + Event Bus |
 | **产品形态** | 临床知识库构建 | Foundry Operational Ontology |
 
-```
+```text
 构建期（一次性 / 低频）：
   医学文档 → nano-ontoprompt 提取 → 临床专家审核 → 导出 clinical_kb
 
@@ -1987,7 +1987,7 @@ Phase 3（持续）：规模化 + 反哺
 #### nano-ontoprompt 在筛查里的价值
 
 | 能力 | 筛查场景 | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | 实体 / 关系 / 知识图谱 Tab | ✅ 必要 | clinical_kb 构建 |
 | 逻辑规则 Tab | ✅ 必要 | 落位为 ClinicalRule，运行时 consult |
 | LLM 提取 + AI 审查 | ✅ 必要 | 批量结构化 + 质量门控 |
@@ -2005,7 +2005,7 @@ Phase 3（持续）：规模化 + 反哺
 
 #### 筛查运行时实际 consult 什么
 
-```
+```text
 lookupSymptom("睡不着")     → clinical_kb → snomed:193462001
 matchDisorders([...ids])    → clinical_kb → [抑郁症, 双相…]
 getClinicalRules(symptom)   → clinical_kb → triggers_function?
@@ -2016,7 +2016,7 @@ person.recordSymptom()      → patient_graph only（写）
 #### 能否不做文档提取
 
 | 方案 | 适用 |
-|---|---|
+| --- | --- |
 | SNOMED 症状 + 手工几十条 ClinicalRule | 量表驱动的小范围筛查 |
 | 仅 PHQ-9/GAD-7 条目，无疾病图谱 | 极简 MVP，失去方向匹配与共病推理 |
 | 140+ 文档 + nano-ontoprompt 批量提取 | 有大规模指南库时的正确路径 |
@@ -2025,7 +2025,7 @@ person.recordSymptom()      → patient_graph only（写）
 
 #### 系统边界（推荐部署）
 
-```
+```text
 ┌─────────────────────────────┐     导出 / API      ┌─────────────────────────────┐
 │  nano-ontoprompt            │ ──────────────────▶ │  clinical_kb 服务（只读）     │
 │  临床知识库构建              │                     │  TuGraph + Symptom 向量索引   │
@@ -2045,7 +2045,7 @@ person.recordSymptom()      → patient_graph only（写）
 #### 常见误解
 
 | 误解 | 实际 |
-|---|---|
+| --- | --- |
 | 提取的本体在对话里直接用 | 只在构建期用；运行时 consult 导出后的 KB |
 | 362 条实体驱动每一轮提问 | 驱动对话的是 patient_graph + Coverage；KB 做方向/consult |
 | 动作 Tab 的 Function 绑 Disease 执行 | Action 元数据 → 绑 Person 的 FunctionDef |
@@ -2062,7 +2062,7 @@ Section 15 描述的是「LLM 从自由对话中静默识别症状」的 Observa
 
 S1 的核心对象是 `ScreeningSession`（筛查会话），不是通用的 `Session`。状态机：
 
-```
+```text
 created
   │
   ▼
@@ -2084,9 +2084,9 @@ scoring                 — 模型打分与多模态融合决策
 ### 新增 Object 设计（S1 Operational 层）
 
 | Object | 说明 | 关键属性 |
-|---|---|---|
-| `ScreeningSession` | 一次多模态评估会话 | status, modalities_mask, consent_version, source（mini_program/app/web）|
-| `ModalityCapture` | 单路模态采集资产 | modality_type（text/audio/video/scale）, asset_uri, quality_score, status（uploaded/scored/failed）|
+| --- | --- | --- |
+| `ScreeningSession` | 一次多模态评估会话 | status, modalities_mask, consent_version, source（mini_program/app/web） |
+| `ModalityCapture` | 单路模态采集资产 | modality_type（text/audio/video/scale）, asset_uri, quality_score, status（uploaded/scored/failed） |
 | `ScreeningResult` | 多模态融合决策输出 | risk_level（low/moderate/high/urgent）, confidence, explain_json, triage_path |
 | `TriageRecommendation` | 分流路径推荐 | path_type（self_help/community_followup/outpatient/crisis_channel）, resource_refs[], strategy_version |
 | `CrisisEvent` | 危机检测命中事件 | trigger_type（keyword/threshold/model）, rule_id, modality_source, notify_status, escalation_chain |
@@ -2106,7 +2106,7 @@ scoring                 — 模型打分与多模态融合决策
   "disclaimer": "本评估为筛查辅助工具，不构成医学诊断。",
   "low_confidence": false
 }
-```
+```text
 
 `explanation_text` 必须使用患者可读语言，不含医疗承诺表述。`disclaimer` 强制输出，不可省略。模型超时降级时 `low_confidence: true`。
 
@@ -2119,14 +2119,14 @@ ScreeningSession --PRODUCED-->     ScreeningResult      会话输出的融合结
 ScreeningResult  --RECOMMENDS-->   TriageRecommendation 结果推荐的分流路径
 ScreeningSession --TRIGGERED-->    CrisisEvent          危机检测命中事件（并行）
 Person           --COMPLETED-->    ScreeningSession     历史筛查记录（权重衰减适用）
-```
+```text
 
 ### Function 设计（S1 专用）
 
 S1 的 Function **不是 Observation Function**——触发方是用户显式操作，结果对用户可见，不是 LLM 静默识别。
 
 | Function | ConfirmLevel | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | `screening.captureModality()` | AutoExecute（需 consent_scope） | 注册模态资产元数据并上传对象存储；未 consent 的模态返回 `consent_required`，不静默跳过 |
 | `screening.submitResponse()` | AutoExecute | 提交量表答题，写 ScreeningSession |
 | `screening.runFusion()` | AutoExecute（系统调用） | 触发多模态融合评分，写 ScreeningResult；模型超时时回退规则引擎并标记 `low_confidence: true` |
@@ -2146,7 +2146,7 @@ screening.captureModality()：实时检查对应模态的 consent scope
   → 前端弹出单独 consent 说明弹窗
   → 用户同意 → 更新 ConsentRecord → 重新调用 captureModality()
   → 用户拒绝 → modalities_mask |= AUDIO_UNAVAIL，降级继续
-```
+```text
 
 ### 降级规则
 
@@ -2160,7 +2160,7 @@ audio     上传超时           回退规则引擎，explain_json 标 low_confi
 video     用户拒绝权限       仅量表+文本+音频（若已授权）                        VIDEO_UNAVAIL
 video     光线/质量不达标     quality_score < 阈值 → 标 VIDEO_QUALITY，不参与融合 VIDEO_QUALITY
 全模态    网络异常           仅量表（3分钟最小可行路径），会话仍完成              ALL_FALLBACK
-```
+```text
 
 `modalities_mask` 写入 ScreeningSession，前端根据 mask 值渲染对应提示（不可出现 mask=0 但 UI 提示模态缺失的不一致）。
 
@@ -2196,7 +2196,7 @@ video     光线/质量不达标     quality_score < 阈值 → 标 VIDEO_QUALIT
   "crisis_type":  "suicidal_ideation",
   "occurred_at":  "2026-06-03T10:03:12Z"
 }
-```
+```text
 
 **两事件的并行关系：**
 
@@ -2212,14 +2212,14 @@ video     光线/质量不达标     quality_score < 阈值 → 标 VIDEO_QUALIT
 后端：两事件独立消费，互不阻塞
 危机通知服务：只消费 screening.crisis，不等 screening.submitted
 S2 方案引擎：只消费 screening.submitted，不处理危机逻辑
-```
+```text
 
 ### 与 patient_graph 的关系
 
 S1 ScreeningSession 是独立于 patient_graph Session 的对象，两者触发方式和数据结构完全不同：
 
-| | S1 ScreeningSession | patient_graph Session（对话随访）|
-|---|---|---|
+|  | S1 ScreeningSession | patient_graph Session（对话随访） |
+| --- | --- | --- |
 | 触发方 | 用户主动进入筛查流程 | 开放对话，LLM 驱动 |
 | 主要产出 | ScreeningResult + TriageRecommendation | SymptomReport + Coverage 状态 |
 | Function 类型 | 用户显式触发，结果对用户可见 | Observation Function，静默写图 |
@@ -2255,7 +2255,7 @@ active                     — 实时 ASR 流式转写中
   │
   ▼  encounter.end()
 completed                  — 触发 encounter.generateDraft()
-```
+```text
 
 **MedicalRecordDraft（病历草稿）：**
 
@@ -2270,12 +2270,12 @@ confirmed                  — 医师责任区；AI 不可再自动覆盖（AC-4
   │
   ▼  encounter.archiveDraft()    ExplicitConfirm（仅 confirmed 状态可触发）
 archived                   — 已推送 HIS/EMR；写审计；30 年不可删除（BR-04）
-```
+```text
 
 ### 新增 Object 设计（S4 Operational 层）
 
 | Object | PRD 库表 | 关键属性 |
-|---|---|---|
+| --- | --- | --- |
 | `EncounterSession` | encounter_session | status, clinician_id, patient_id, started_at, ended_at, audio_asset_uri |
 | `TranscriptSegment` | encounter_transcript_segment | seq（严格递增）, text, speaker（clinician/patient）, entities_json, started_ms, ended_ms |
 | `MedicalRecordDraft` | note_draft | status, template_id, content_json, model_version, ai_watermark, edit_count, confirmed_by, confirmed_at, archived_at |
@@ -2306,7 +2306,7 @@ archived                   — 已推送 HIS/EMR；写审计；30 年不可删�
 
 ### Link 设计（S4 专用）
 
-```
+```text
 Clinician           --CONDUCTED-->    EncounterSession    医生主持本次诊间会话
 Patient             --ATTENDED-->     EncounterSession    患者参与本次会话
 EncounterSession    --HAS_SEGMENT-->  TranscriptSegment   按 seq 有序的转写片段
@@ -2322,7 +2322,7 @@ MedicalRecordDraft  --REFERENCES-->   TranscriptSegment   草稿各段引用的�
 S4 的 Actor 是 **Clinician**（B 端医生站），不是 C 端 Person。
 
 | Function | ConfirmLevel | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | `encounter.start()` | AutoExecute | 创建 EncounterSession，开始接收 ASR 流 |
 | `encounter.pause()` | AutoExecute | 暂停录音 → paused |
 | `encounter.resume()` | AutoExecute | 恢复录音 → active |
@@ -2335,7 +2335,7 @@ S4 的 Actor 是 **Clinician**（B 端医生站），不是 C 端 Person。
 
 **为什么 `confirmDraft()` 用 ExplicitConfirm 而非 ClinicalReview：**
 
-```
+```text
 ClinicalReview  — 需要另一个角色（远程临床坐席）在不同系统里 sign-off
                   适用：C 端用户不应直接看到的结论（如 S1 筛查报告）
 
@@ -2348,7 +2348,7 @@ ExplicitConfirm — 同一个 Clinician 对自己诊间草稿显式签发
 
 HIS 适配层是 Event Bus 的订阅者，Function 主流程不直接调用 HIS API：
 
-```
+```text
 encounter.archiveDraft(draft_id)
     │
     ├── 前置检查：status == confirmed（否则返回错误，不执行）
@@ -2385,7 +2385,7 @@ HIS 调用失败不回滚 `archived` 状态（已写入平台侧），但触发�
   "sections_count": 8,
   "occurred_at":    "2026-06-03T10:31:00Z"
 }
-```
+```text
 
 **`emr.note.archive_requested`**（归档请求，HIS 适配订阅者消费）：
 
@@ -2405,7 +2405,7 @@ HIS 调用失败不回滚 `archived` 状态（已写入平台侧），但触发�
 
 PRD 幻觉防护要求对话原文与生成段落对照展示，数据来源是 `REFERENCES` 边：
 
-```
+```text
 草稿段落 "present_illness"
   --REFERENCES--> TranscriptSegment{seq: 3}, TranscriptSegment{seq: 7}, TranscriptSegment{seq: 12}
 
@@ -2424,7 +2424,7 @@ PRD 幻觉防护要求对话原文与生成段落对照展示，数据来源是 
 ### 生产上线硬约束（S4）
 
 | 约束来源 | 具体要求 | ONTOLOGY.md 对应 |
-|---|---|---|
+| --- | --- | --- |
 | BR-01 | AI 生成进正式 EMR 前须人工确认 | `confirmDraft()` ExplicitConfirm → confirmed 状态 |
 | BR-04 | 病历保留 30 年 | archived 状态不可删除，归档写 function_runs |
 | AC-4.01 | transcript 按 seq 有序可拼接 | TranscriptSegment.seq 严格递增，写入时校验 |
@@ -2445,7 +2445,7 @@ PRD 幻觉防护要求对话原文与生成段落对照展示，数据来源是 
 PRD 的权限模型是 RBAC（角色-权限-数据范围），一个 User 账号可以同时持有多个角色（如医生兼任质控）。
 
 | 角色常量 | 说明 | 主要端 | 数据范围 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `PUBLIC_USER` | 公众，C 端，可匿名筛查 | C 端 | 仅自己的数据 |
 | `PATIENT` | 有治疗关系的患者，经咨询师/医生指派后激活 | C 端 | 仅自己的数据 |
 | `GUARDIAN` | 家属/监护人，代理未成年人操作 | C 端 | 被监护人的数据（需授权记录） |
@@ -2461,7 +2461,7 @@ PRD 的权限模型是 RBAC（角色-权限-数据范围），一个 User 账号
 在 PRD 原始矩阵基础上，覆盖 Sections 15–17 所有 Function：
 
 | Function | PUBLIC | PATIENT | GUARDIAN | COUNSELOR | CLINICIAN | QC | ADMIN |
-|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | `screening.captureModality` | ✓ | ✓ | ✓ 代理 | ✗ | ✗ | ✗ | ✗ |
 | `screening.submitResponse` | ✓ | ✓ | ✓ 代理 | ✗ | ✗ | ✗ | ✗ |
 | `screening.flagCrisis` | 系统 | 系统 | 系统 | 系统 | 系统 | ✗ | ✗ |
@@ -2478,7 +2478,7 @@ PRD 的权限模型是 RBAC（角色-权限-数据范围），一个 User 账号
 
 校验分两层，顺序不可颠倒：
 
-```
+```go
 authorizeFunction(actor, fn, params):
 
   第一层：角色检查（纯内存，无 DB 查询）
@@ -2516,7 +2516,7 @@ PRD AC-P.01：任意业务写操作均可关联 `tenant_id`；跨租户访问返
   "ref":        { "type": "ScreeningSession", "id": "ss_abc" },
   "properties": { "..." }
 }
-```
+```text
 
 索引扩展：原有 `{ "ref.type": 1, "ref.id": 1 }` 唯一索引前加 `tenant_id`，  
 变为 `{ "tenant_id": 1, "ref.type": 1, "ref.id": 1 }` 唯一。
@@ -2545,7 +2545,7 @@ PRD AC-P.01：任意业务写操作均可关联 `tenant_id`；跨租户访问返
   "params":    { "draft_id": "nd_xyz" },
   "status":    "executed"
 }
-```
+```text
 
 **Executor 层隔离（禁止客户端传入 tenant_id）：**
 
@@ -2570,7 +2570,7 @@ S2（循证精准干预方案智能匹配与动态个性化优化平台）是 S1
 
 **CarePlan（干预方案）：**
 
-```
+```text
 draft              — AI 生成结构化草案，咨询师/医生未确认
   │
   ▼  plan.confirm()    ExplicitConfirm
@@ -2585,7 +2585,7 @@ active             — 已激活，任务按计划推送
 
 **CareTask（单个任务实例）：**
 
-```
+```text
 scheduled          — 已排期，未到 due_at
   │
   ▼  （时间到达）
@@ -2599,7 +2599,7 @@ due                — 到期，等待患者操作
 ### 新增 Object 设计（S2 Operational 层）
 
 | Object | PRD 库表 | 关键属性 |
-|---|---|---|
+| --- | --- | --- |
 | `CarePlan` | care_plan | status, subject_user_id, owner_id（counselor/clinician）, version, source_screening_id |
 | `CarePlanItem` | care_plan_item | item_type（exercise/reading/scale/medication_reminder）, payload_json, evidence_refs[], sequence |
 | `CareTask` | care_task | plan_id, item_id, due_at, status, completed_at, reminder_count |
@@ -2616,7 +2616,7 @@ due                — 到期，等待患者操作
   "evidence_refs":  ["clinical_kb:rule_mindfulness_gad7"],
   "advisory_label": "建议性质，非医嘱"
 }
-```
+```text
 
 `advisory_label` 在所有 `CarePlanItem` 中强制输出（PRD 硬规则：干预文案须在 UI/API 层一致展示建议性质，不可误解为医嘱）。
 
@@ -2630,7 +2630,7 @@ plan.adjust() 执行时：
 
 查询当前方案：filter version == latest
 查询历史方案：按 version 列出（疗效回溯、责任追溯）
-```
+```text
 
 ### Link 设计（S2 专用）
 
@@ -2643,14 +2643,14 @@ CarePlanItem     --GENERATES-->   CareTask        措施行生成的任务实例
 Patient          --COMPLETED-->   CareTask        患者完成任务（关系强度 +1.0）
 Patient          --SUBMITTED-->   CareFeedback    患者提交反馈
 CareFeedback     --EVALUATES-->   CarePlan        反馈关联方案（疗效闭环溯源）
-```
+```text
 
 `ScreeningResult --TRIGGERED--> CarePlan` 是 S1→S2 闭环的关键链路，`source_screening_id` 同时写入 CarePlan 属性，双向可查。
 
 ### Function 设计（S2 专用）
 
 | Function | Actor | ConfirmLevel | 说明 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `plan.generate()` | 系统（消费 screening.submitted） | AutoExecute | AI 生成 CarePlan（status=draft）+ CarePlanItems；所有 item 强制写 advisory_label |
 | `plan.confirm()` | Counselor / Clinician | ExplicitConfirm | 确认草案 → active；发布 plan.generated 事件通知患者 |
 | `plan.adjust()` | Counselor / Clinician | PreviewConfirm | 修改活跃方案（变更说明必填），版本递增，旧版本保留 |
@@ -2694,7 +2694,7 @@ CareFeedback     --EVALUATES-->   CarePlan        反馈关联方案（疗效闭
   "completed_at":    "2026-06-03T08:30:00Z",
   "delay_hours":     2
 }
-```
+```text
 
 `delay_hours`（实际完成 vs due_at 的偏差）是依从性预测模型（FR-2.07）的核心输入特征。
 
@@ -2724,4 +2724,4 @@ S1 筛查结束
   → plan.adjust()（PreviewConfirm，变更说明必填）
   → version 递增，旧版本保留
   → plan.adjusted 事件 → 通知患者方案已更新
-```
+```text
